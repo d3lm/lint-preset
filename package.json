@@ -1,0 +1,84 @@
+{
+  "name": "@d3lm/lint-preset",
+  "version": "1.0.0",
+  "description": "Opinionated Oxlint + ESLint preset. Oxlint handles non-type-aware rules, while ESLint layers only type-aware rules not covered by Oxlint on top.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "pnpm run build && oxlint && eslint",
+    "lint:fix": "pnpm run build && oxlint --fix && eslint --fix",
+    "prepublishOnly": "pnpm run build"
+  },
+  "exports": {
+    "./eslint": {
+      "types": "./dist/eslint.d.ts",
+      "import": "./dist/eslint.js",
+      "require": "./dist/eslint.cjs"
+    },
+    "./oxlint": {
+      "types": "./dist/oxlint.d.ts",
+      "import": "./dist/oxlint.js",
+      "require": "./dist/oxlint.cjs"
+    },
+    "./rules": {
+      "types": "./dist/rules.d.ts",
+      "import": "./dist/rules.js",
+      "require": "./dist/rules.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "eslint",
+    "eslint-plugin",
+    "code-style",
+    "linting",
+    "oxlint"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@stylistic/eslint-plugin": ">=5.0.0",
+    "@typescript-eslint/eslint-plugin": ">=8.0.0",
+    "eslint": ">=9.0.0",
+    "eslint-config-prettier": ">=10.0.0",
+    "eslint-plugin-jsdoc": ">=62.0.0",
+    "eslint-plugin-oxlint": ">=1.60.0",
+    "eslint-plugin-prettier": ">=5.0.0",
+    "eslint-plugin-react-hooks": ">=7.0.0",
+    "eslint-plugin-unicorn": ">=64.0.0",
+    "oxlint": ">=1.60.0",
+    "oxlint-tsgolint": ">=0.21.1",
+    "typescript-eslint": ">=8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "eslint-plugin-react-hooks": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/common-tags": "^1.8.4",
+    "@types/eslint": "^9.6.1",
+    "@types/node": "^25.9.2",
+    "common-tags": "^1.8.2",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^62.9.0",
+    "eslint-plugin-oxlint": "^1.60.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-unicorn": "^64.0.0",
+    "oxlint": "^1.60.0",
+    "oxlint-tsgolint": "^0.21.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.32.1",
+    "vitest": "^4.1.4"
+  }
+}
