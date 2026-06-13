@@ -8,7 +8,6 @@ export const DEFAULT_ABBREVIATION_ALLOW_LIST = [
   'ref',
   'dev',
   'i',
-  'env',
   'arg',
   'args',
 ];
@@ -18,6 +17,7 @@ export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> |
   refs: false,
   dev: false,
   dir: false,
+  env: false,
   ev: { event: true },
   val: { value: true },
   msg: { message: true },
