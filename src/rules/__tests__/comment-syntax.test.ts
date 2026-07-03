@@ -85,6 +85,14 @@ tester.run('comment-syntax', rule, {
       `,
       options: [{ block: { enforceParamStyle: false } }],
     },
+    {
+      code: stripIndent`
+        /*
+         * Hi.
+         */
+      `,
+      options: [{ block: { requireJSDocOpening: false } }],
+    },
   ],
   invalid: [
     {
@@ -101,6 +109,24 @@ tester.run('comment-syntax', rule, {
       code: `/* this is wrong. */`,
       output: `/* This is wrong. */`,
       errors: [{ messageId: 'blockCapital' }],
+    },
+    {
+      code: stripIndent`
+        /*
+         * Hi.
+         */
+      `,
+      output: stripIndent`
+        /**
+         * Hi.
+         */
+      `,
+      errors: [{ messageId: 'blockJSDocOpening' }],
+    },
+    {
+      code: '/* First line has text.\n   More text. */',
+      output: '/** First line has text.\n   More text. */',
+      errors: [{ messageId: 'blockJSDocOpening' }],
     },
     {
       code: `/* This is wrong */`,

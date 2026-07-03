@@ -17,6 +17,7 @@ interface LineOptions {
 interface BlockOptions {
   readonly requireCapital: boolean;
   readonly requireTrailingPunctuation: boolean;
+  readonly requireJSDocOpening: boolean;
   readonly enforceOpening: boolean;
   readonly enforceClosing: boolean;
   readonly requireSpaceAfterStar: boolean;
@@ -42,6 +43,7 @@ type MessageId =
   | 'blockCapital'
   | 'blockTrailingPunctuation'
   | 'blockSingleLineJSDoc'
+  | 'blockJSDocOpening'
   | 'blockOpening'
   | 'blockClosing'
   | 'blockEmptyLineBeforeClose'
@@ -88,6 +90,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
   block: {
     requireCapital: true,
     requireTrailingPunctuation: true,
+    requireJSDocOpening: true,
     enforceOpening: false,
     enforceClosing: false,
     requireSpaceAfterStar: true,
@@ -466,6 +469,17 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
   const firstLine = lines[0];
   const lastLine = lines.at(-1) ?? '';
 
+  // the comment value excludes the `/*` opener, so a `/**` comment has a value starting with `*`
+  if (block.requireJSDocOpening && !comment.value.startsWith('*')) {
+    const openerEnd = range[0] + 2;
+
+    context.report({
+      loc,
+      messageId: 'blockJSDocOpening',
+      fix: (fixer) => fixer.insertTextAfterRange([range[0], openerEnd], '*'),
+    });
+  }
+
   if (block.enforceOpening) {
     const opening = firstLine.trim();
 
@@ -584,6 +598,7 @@ const messages: Record<MessageId, string> = {
   blockCapital: 'Block comment should start with an uppercase letter.',
   blockTrailingPunctuation: 'Block comment should end with punctuation.',
   blockSingleLineJSDoc: 'JSDoc-style block comments (/** ... */) must span multiple lines.',
+  blockJSDocOpening: "Multi-line block comments must start with '/**', not '/*'.",
   blockOpening: "Block comment should start with '/**\\n *' (or '/*\\n *').",
   blockClosing: "Block comment should end with '\\n */'.",
   blockEmptyLineBeforeClose: 'Block comment should not end with an empty line.',
@@ -640,6 +655,7 @@ const rule: Rule.RuleModule = {
             properties: {
               requireCapital: { type: 'boolean' },
               requireTrailingPunctuation: { type: 'boolean' },
+              requireJSDocOpening: { type: 'boolean' },
               enforceOpening: { type: 'boolean' },
               enforceClosing: { type: 'boolean' },
               requireSpaceAfterStar: { type: 'boolean' },
