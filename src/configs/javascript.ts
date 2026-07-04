@@ -80,7 +80,7 @@ export const paddingLineEntries = [
     prev: 'if',
     next: '*',
   },
-  /*
+  /**
    * Imports form a block: padded from anything that isn't an import, but
    * consecutive imports can sit together. The same-type rule comes last so it
    * wins over the surrounding `*` rules.
@@ -100,7 +100,7 @@ export const paddingLineEntries = [
     prev: 'import',
     next: 'import',
   },
-  /*
+  /**
    * Exports form a block: padded from anything that isn't an export, but
    * consecutive exports can sit together. The same-type rule comes last so it
    * wins over the surrounding `*` rules.
@@ -165,7 +165,7 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     '@stylistic/padding-line-between-statements': ['error', ...paddingLineEntries],
     '@stylistic/no-trailing-spaces': 'error',
 
-    /*
+    /**
      * Indentation is owned by Prettier. Oxlint's @stylistic/indent port
      * diverges from eslint-stylistic on edge cases (e.g., multiline object
      * args inside ternaries), so we leave the rule off.
@@ -206,12 +206,12 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     ...unicornRulesOxlint,
     ...unicornRulesJsPlugin,
 
-    /*
+    /**
      * Oxlint's built-in `unicorn` / `jsdoc` plugins don't implement these,
      * so we wire the original JS plugins under aliased names (see jsPlugins
      * in `src/oxlint.ts`). Rule IDs use the alias, not the canonical prefix.
      */
-    'unicornx/prevent-abbreviations': [
+    'unicornx/name-replacements': [
       'error',
       {
         replacements: inheritReplacements ? { ...ABBREVIATION_REPLACEMENTS, ...replacements } : replacements,

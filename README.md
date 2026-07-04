@@ -190,9 +190,10 @@ eslintConfig({
   },
 
   /**
-   * Tune unicorn's `prevent-abbreviations`. Extends the built-in allow list
-   * and replacements by default; set `inheritAllowList` / `inheritReplacements`
-   * to false to replace them outright.
+   * Tune unicorn's `name-replacements` (formerly `prevent-abbreviations`).
+   * Extends the built-in allow list and replacements by default; set
+   * `inheritAllowList` / `inheritReplacements` to false to replace them
+   * outright.
    */
   preventAbbreviations: {
     allowList: ['args'],

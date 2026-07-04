@@ -1,6 +1,6 @@
 import type { Linter } from 'eslint';
 
-/*
+/**
  * Mirror of `eslint-plugin-unicorn`'s recommended config, split by runtime.
  *
  * Oxlint natively implements most unicorn rules, so we enable those under the
@@ -9,8 +9,8 @@ import type { Linter } from 'eslint';
  * `src/oxlint.ts`), because oxlint's built-in plugin owns the `unicorn/`
  * namespace.
  *
- * `unicorn/prevent-abbreviations` is also not ported; it lives in
- * `javascript.ts` because it takes user-configurable options.
+ * `unicorn/name-replacements` is also not ported. It lives in `javascript.ts`
+ * because it takes user-configurable options.
  */
 
 /**
@@ -165,13 +165,13 @@ export const unicornRulesJsPlugin: Linter.RulesRecord = {
   'unicornx/prefer-switch': 'error',
   'unicornx/template-indent': 'error',
 
-  /*
+  /**
    * Native port exists but only in oxlint's nursery category, which can't be
    * enabled from config, so we run the JS original instead.
    */
   'unicornx/no-useless-iterator-to-array': 'error',
 
-  /*
+  /**
    * Oxlint's port hardcodes uppercase hexadecimal digits, which fights
    * Prettier's lowercase formatting, so we run the JS original with the
    * lowercase option instead.

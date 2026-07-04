@@ -155,7 +155,7 @@ const rule: Rule.RuleModule = {
             continue;
           }
 
-          /*
+          /**
            * Insert the blank line before the comment's leading indentation so the
            * comment keeps its position instead of being dedented.
            */
