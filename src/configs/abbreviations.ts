@@ -1,17 +1,4 @@
-export const DEFAULT_ABBREVIATION_ALLOW_LIST = [
-  'fn',
-  'cb',
-  'err',
-  'prev',
-  'props',
-  'refs',
-  'ref',
-  'dev',
-  'i',
-  'arg',
-  'args',
-  'utils',
-];
+export const DEFAULT_ABBREVIATION_ALLOW_LIST = ['fn', 'cb', 'err', 'prev', 'dev', 'i'];
 
 export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> | false> = {
   ref: false,
@@ -23,6 +10,10 @@ export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> |
   props: false,
   util: false,
   utils: false,
+  param: false,
+  params: false,
+  arg: false,
+  args: false,
   ev: { event: true },
   val: { value: true },
   msg: { message: true },
