@@ -39,6 +39,46 @@ tester.run('comment-syntax', rule, {
        * \`\`\`
        */
     `,
+    stripIndent`
+      /**
+       * A shortcut modifier.
+       *
+       * - Some list item
+       * - Another list item
+       */
+    `,
+    stripIndent`
+      /**
+       * A shortcut modifier.
+       *
+       *  - Some list item
+       *  - Another list item
+       */
+    `,
+    stripIndent`
+      /**
+       * Steps:
+       *
+       * 1. First step
+       * 2. Second step that wraps onto
+       *    another line without punctuation
+       */
+    `,
+    stripIndent`
+      /**
+       * Whether to ignore key events when focus is in an input, textarea, or contenteditable element.
+       *
+       * @default true
+       */
+    `,
+    stripIndent`
+      /**
+       * Does something.
+       *
+       * @returns The result that wraps
+       *   onto another line without punctuation
+       */
+    `,
     `// wait for it...`,
     `// many things, e.g.`,
     {

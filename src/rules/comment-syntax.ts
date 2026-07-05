@@ -72,6 +72,7 @@ const PARAM_DESC_RE = /^@param\s+(?:\{[^}]*\}\s+)?(\S+)\s+(.*\S)\s*$/;
 const BLOCK_LINE_WITH_TEXT = /^(\s*\*)(\s*)(\S.*?)\s*$/;
 const BLOCK_LINE_EMPTY = /^\s*\*\s*$/;
 const CODE_FENCE_LINE = /^\s*\*\s*```/;
+const LIST_ITEM_LINE = /^(?:[-*+]|\d+[.)])\s/;
 
 const DEFAULT_LINE_ENDINGS = Object.freeze(['etc.', '...', 'e.g.', 'i.e.']);
 const DEFAULT_PARAGRAPH_ENDINGS = Object.freeze(['.', '!', '?', ':', ';', '`', ')', ']', '}']);
@@ -504,6 +505,7 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
 
   let insideCodeBlock = false;
   let paragraphStart = true;
+  let skipParagraphEnding = false;
   let previousText: string | undefined;
 
   for (let index = 1; index < lines.length - 1; index += 1) {
@@ -512,6 +514,7 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
     if (CODE_FENCE_LINE.test(line)) {
       insideCodeBlock = !insideCodeBlock;
       paragraphStart = true;
+      skipParagraphEnding = false;
       previousText = undefined;
 
       continue;
@@ -522,11 +525,12 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
     }
 
     if (BLOCK_LINE_EMPTY.test(line)) {
-      if (previousText !== undefined && block.requireParagraphCapital) {
+      if (previousText !== undefined && block.requireParagraphCapital && !skipParagraphEnding) {
         reportParagraphEnding(context, comment, previousText, options);
       }
 
       paragraphStart = true;
+      skipParagraphEnding = false;
       previousText = undefined;
 
       continue;
@@ -539,6 +543,11 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
     }
 
     const [, starSegment, spaces, text] = match;
+
+    // list items and JSDoc tags (plus wrapped continuation lines) are exempt from paragraph endings
+    if (LIST_ITEM_LINE.test(text) || JSDOC_TAG_LINE.test(line)) {
+      skipParagraphEnding = true;
+    }
 
     if (block.requireSpaceAfterStar && spaces.length === 0) {
       const lineOffset = offsetOfLine(comment, lines, index);
@@ -586,7 +595,7 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
     }
   }
 
-  if (previousText !== undefined && block.requireParagraphCapital) {
+  if (previousText !== undefined && block.requireParagraphCapital && !skipParagraphEnding) {
     reportParagraphEnding(context, comment, previousText, options);
   }
 }
