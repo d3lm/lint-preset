@@ -10,6 +10,7 @@ export const DEFAULT_ABBREVIATION_ALLOW_LIST = [
   'i',
   'arg',
   'args',
+  'utils',
 ];
 
 export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> | false> = {
@@ -20,6 +21,8 @@ export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> |
   env: false,
   prop: false,
   props: false,
+  util: false,
+  utils: false,
   ev: { event: true },
   val: { value: true },
   msg: { message: true },

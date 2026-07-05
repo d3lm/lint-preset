@@ -1,6 +1,6 @@
 {
   "name": "@d3lm/lint-preset",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Opinionated Oxlint + ESLint preset. Oxlint handles non-type-aware rules, while ESLint layers only type-aware rules not covered by Oxlint on top.",
   "license": "MIT",
   "type": "module",
