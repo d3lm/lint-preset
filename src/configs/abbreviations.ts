@@ -14,6 +14,7 @@ export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> |
   params: false,
   arg: false,
   args: false,
+  db: false,
   ev: { event: true },
   val: { value: true },
   msg: { message: true },
