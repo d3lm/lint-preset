@@ -159,6 +159,7 @@ export const unicornRulesJsPlugin: Linter.RulesRecord = {
   'unicornx/no-for-loop': 'error',
   'unicornx/no-named-default': 'error',
   'unicornx/no-unnecessary-polyfills': 'error',
+  'unicornx/no-unreadable-for-of-expression': 'error',
   'unicornx/prefer-export-from': 'error',
   'unicornx/prefer-simple-condition-first': 'error',
   'unicornx/prefer-single-call': 'error',

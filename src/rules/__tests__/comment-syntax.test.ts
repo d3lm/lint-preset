@@ -133,6 +133,8 @@ tester.run('comment-syntax', rule, {
       `,
       options: [{ block: { requireJSDocOpening: false } }],
     },
+    `#!/usr/bin/env node\nconsole.log('hi');`,
+    `#!/usr/bin/env -S node --enable-source-maps\nconsole.log('hi');`,
   ],
   invalid: [
     {

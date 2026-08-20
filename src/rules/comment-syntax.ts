@@ -174,6 +174,13 @@ function resolveOptions(raw: unknown): ResolvedOptions {
   };
 }
 
+function isHashbang(comment: AnyComment): boolean {
+  // espree reports hashbangs as `Shebang`; other parsers use a `Line` comment starting with `!` at offset 0
+  return (
+    comment.type === 'Shebang' || (comment.type === 'Line' && comment.range?.[0] === 0 && comment.value.startsWith('!'))
+  );
+}
+
 function shouldSkipComment(value: string, options: ResolvedOptions): boolean {
   const trimmed = value.trim();
 
@@ -692,7 +699,7 @@ const rule: Rule.RuleModule = {
         const comments = sourceCode.getAllComments();
 
         for (const comment of comments) {
-          if (shouldSkipComment(comment.value, options)) {
+          if (isHashbang(comment) || shouldSkipComment(comment.value, options)) {
             continue;
           }
 
