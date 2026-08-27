@@ -64,7 +64,9 @@ const DIRECTIVE_PATTERN =
 const TAG_PATTERN = /^\s*(?:TODO|FIXME|HACK|NOTE|BUG|XXX|SAFETY|WARNING|INFO|OPTIMIZE|REVIEW|PERF|DEPRECATED)\b/i;
 
 const FIRST_WORD_PATTERN = /^\s*([A-Za-z_$][\w$]*)/;
-const ALL_CAPS_WORD = /^[A-Z][A-Z0-9_]*$/;
+
+// requires 2+ chars so sentence-starting "A" is not mistaken for an acronym; "I" is a legitimate capital
+const ALL_CAPS_WORD = /^(?:I|[A-Z][A-Z0-9_]+)$/;
 
 const JSDOC_TAG_LINE = /^\s*\*\s*@[A-Za-z]/;
 const SINGLE_LINE_JSDOC_TAG = /^@[A-Za-z][\w-]*$/;

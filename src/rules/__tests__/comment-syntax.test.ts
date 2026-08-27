@@ -81,6 +81,7 @@ tester.run('comment-syntax', rule, {
     `,
     `// wait for it...`,
     `// many things, e.g.`,
+    `// I think this is fine`,
     {
       code: `// see https://x.com`,
       options: [{ ignoreDirectives: false }],
@@ -178,6 +179,11 @@ tester.run('comment-syntax', rule, {
     {
       code: `// This is wrong`,
       output: `// this is wrong`,
+      errors: [{ messageId: 'lineLowercase' }],
+    },
+    {
+      code: `// A too-old Node.js still gets a working TUI when Bun is around`,
+      output: `// a too-old Node.js still gets a working TUI when Bun is around`,
       errors: [{ messageId: 'lineLowercase' }],
     },
     {
