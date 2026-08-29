@@ -3,11 +3,17 @@
   "version": "1.1.7",
   "description": "Opinionated Oxlint + ESLint preset. Oxlint handles non-type-aware rules, while ESLint layers only type-aware rules not covered by Oxlint on top.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d3lm/lint-preset.git"
+  },
   "type": "module",
+  "packageManager": "pnpm@10.30.3",
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check": "tsc --noEmit",
     "lint": "pnpm run build && oxlint && eslint",
     "lint:fix": "pnpm run build && oxlint --fix && eslint --fix",
     "prepublishOnly": "pnpm run build"
