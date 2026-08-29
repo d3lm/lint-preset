@@ -42,11 +42,113 @@ interface NamingConventionFormatOptions {
 }
 
 /**
- * Non type-aware TypeScript rules that run under Oxlint.
+ * Type-aware typescript-eslint rules that Oxlint executes natively through
+ * tsgolint (`options.typeAware`). They mirror what typescript-eslint's
+ * `strictTypeChecked` + `stylisticTypeChecked` presets enabled when these
+ * rules still ran under ESLint — same severities, same options — so moving
+ * them here changed which engine serves them, not the behavior.
+ *
+ * Type-aware rules in oxlint's `correctness` category (e.g. `await-thenable`,
+ * `unbound-method`) are not listed: they already run via the default
+ * category, as `warn`, matching the pre-migration state.
+ *
+ * `typescript/naming-convention` is one of the two typescript-eslint
+ * type-aware rules tsgolint doesn't implement; it stays in ESLint
+ * (see {@link tsRulesEslint}).
+ */
+export const tsTypeAwareRulesOxlint: Linter.RulesRecord = {
+  'typescript/no-confusing-void-expression': 'error',
+  'typescript/no-deprecated': 'error',
+  'typescript/no-floating-promises': 'error',
+  'typescript/no-misused-promises': 'error',
+  'typescript/no-mixed-enums': 'error',
+  'typescript/no-unnecessary-boolean-literal-compare': 'error',
+  'typescript/no-unnecessary-condition': 'error',
+  'typescript/no-unnecessary-template-expression': 'error',
+  'typescript/no-unnecessary-type-arguments': 'error',
+  'typescript/no-unnecessary-type-assertion': 'error',
+  'typescript/no-unnecessary-type-conversion': 'error',
+  'typescript/no-unnecessary-type-parameters': 'error',
+  'typescript/no-unsafe-argument': 'error',
+  'typescript/no-unsafe-assignment': 'error',
+  'typescript/no-unsafe-call': 'error',
+  'typescript/no-unsafe-enum-comparison': 'error',
+  'typescript/no-unsafe-member-access': 'error',
+  'typescript/no-unsafe-return': 'error',
+  'typescript/non-nullable-type-assertion-style': 'error',
+  'typescript/only-throw-error': 'error',
+  'typescript/prefer-find': 'error',
+  'typescript/prefer-includes': 'error',
+  'typescript/prefer-nullish-coalescing': ['error', { ignorePrimitives: true }],
+  'typescript/prefer-optional-chain': 'error',
+  'typescript/prefer-promise-reject-errors': 'error',
+  'typescript/prefer-reduce-type-parameter': 'error',
+  'typescript/prefer-regexp-exec': 'error',
+  'typescript/prefer-return-this-type': 'error',
+  'typescript/prefer-string-starts-ends-with': 'error',
+  'typescript/related-getter-setter-pairs': 'error',
+  'typescript/restrict-plus-operands': [
+    'error',
+    {
+      allowAny: false,
+      allowBoolean: false,
+      allowNullish: false,
+      allowNumberAndString: false,
+      allowRegExp: false,
+    },
+  ],
+  'typescript/return-await': ['error', 'error-handling-correctness-only'],
+  'typescript/use-unknown-in-catch-callback-variable': 'error',
+};
+
+/**
+ * Syntax-only rules that Oxlint ports natively and that used to reach ESLint
+ * through typescript-eslint's presets: the `strictTypeChecked` /
+ * `stylisticTypeChecked` rules that don't need type information, plus the
+ * ESLint-core rules typescript-eslint's `eslintRecommended` config raises for
+ * TypeScript files (hence the `eslint/` prefix and the TS-files-only scope).
+ */
+export const tsSyntaxRulesOxlint: Linter.RulesRecord = {
+  'typescript/adjacent-overload-signatures': 'error',
+  'typescript/ban-tslint-comment': 'error',
+  'typescript/class-literal-property-style': 'error',
+  'typescript/consistent-generic-constructors': 'error',
+  'typescript/consistent-indexed-object-style': 'error',
+  'typescript/consistent-type-assertions': 'error',
+  'typescript/consistent-type-definitions': 'error',
+  'typescript/no-array-constructor': 'error',
+  'typescript/no-confusing-non-null-assertion': 'error',
+  'typescript/no-empty-object-type': 'error',
+  'typescript/no-extraneous-class': 'error',
+  'typescript/no-inferrable-types': 'error',
+  'typescript/no-invalid-void-type': 'error',
+  'typescript/no-namespace': 'error',
+  'typescript/no-non-null-asserted-nullish-coalescing': 'error',
+  'typescript/no-require-imports': 'error',
+  'typescript/no-unnecessary-type-constraint': 'error',
+  'typescript/no-unsafe-function-type': 'error',
+  'typescript/no-useless-constructor': 'error',
+  'typescript/prefer-for-of': 'error',
+  'typescript/prefer-function-type': 'error',
+  'typescript/prefer-literal-enum-member': 'error',
+  'typescript/unified-signatures': 'error',
+
+  'eslint/no-var': 'error',
+  'eslint/prefer-const': ['error', { destructuring: 'any', ignoreReadBeforeAssign: false }],
+  'eslint/prefer-rest-params': 'error',
+  'eslint/prefer-spread': 'error',
+};
+
+/**
+ * TypeScript rules that run under Oxlint, including the type-aware set
+ * executed through tsgolint.
  */
 export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.RulesRecord {
   return {
     ...jsRulesOxlint(options),
+
+    ...tsTypeAwareRulesOxlint,
+    ...tsSyntaxRulesOxlint,
 
     /**
      * Oxlint exposes typescript-eslint rules under its own `typescript/`
@@ -60,8 +162,6 @@ export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.Rules
         ignoreRestSiblings: true,
       },
     ],
-    'typescript/no-unnecessary-condition': 'error',
-    'typescript/no-floating-promises': 'error',
     'typescript/no-non-null-assertion': 'error',
     'typescript/no-empty-function': 'off',
     'typescript/no-explicit-any': 'off',
@@ -90,9 +190,9 @@ export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.Rules
 /**
  * TypeScript rules served by ESLint.
  *
- * These are not type-aware in the strict sense, but Oxlint's native
- * `typescript` plugin doesn't implement them today, so we run them under
- * ESLint.
+ * Only rules Oxlint can't run remain here: `naming-convention` is one of the
+ * two typescript-eslint type-aware rules tsgolint doesn't implement, and
+ * `explicit-member-accessibility` has no Oxlint port at all.
  */
 export function tsRulesEslint(options: TypeScriptRuleOptions = {}): Linter.RulesRecord {
   return {
@@ -103,12 +203,6 @@ export function tsRulesEslint(options: TypeScriptRuleOptions = {}): Linter.Rules
     '@typescript-eslint/require-await': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/no-empty-function': 'off',
-    '@typescript-eslint/prefer-nullish-coalescing': [
-      'error',
-      {
-        ignorePrimitives: true,
-      },
-    ],
     '@typescript-eslint/no-unused-vars': [
       'error',
       {
