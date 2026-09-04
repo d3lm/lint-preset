@@ -1,11 +1,22 @@
-import { createRequire } from 'node:module';
+import { resolve as importMetaResolve } from 'import-meta-resolve';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type OxlintConfig } from 'oxlint';
 import { jsRulesOxlint, type JavaScriptRuleOptions } from './configs/javascript.js';
 import { reactRulesOxlint, resolveReactRuleOptions, type ReactConfigOptions } from './configs/react.js';
 import { tsRulesOxlint, type TypeScriptRuleOptions } from './configs/typescript.js';
 
-const require = createRequire(import.meta.url);
+/**
+ * Oxlint loads JS plugins with dynamic `import()`, so resolve specifiers
+ * against a package's `import` export condition. `require.resolve` would pick
+ * the `require` entry instead, which ESM-first plugins can ship broken.
+ * eslint-plugin-jsdoc v63's `index-cjs.cjs` contains ESM syntax and crashes
+ * Node's CJS parser. The `import-meta-resolve` ponyfill (bundled at build
+ * time) is used over native `import.meta.resolve` because the latter doesn't
+ * exist in the CJS build of this preset.
+ */
+const resolvePlugin = (specifier: string): string => {
+  return fileURLToPath(importMetaResolve(specifier, import.meta.url));
+};
 
 /**
  * Our own rules bundle ships as a sibling of this file in `dist`. Resolve it
@@ -48,10 +59,10 @@ export const createOxlintConfig = (options?: CreateConfigOptions): OxlintConfig 
      */
     jsPlugins: [
       { name: '@d3lm', specifier: ownRulesPath },
-      { name: '@stylistic', specifier: require.resolve('@stylistic/eslint-plugin') },
-      { name: 'prettier', specifier: require.resolve('eslint-plugin-prettier') },
-      { name: 'unicornx', specifier: require.resolve('eslint-plugin-unicorn') },
-      { name: 'jsdocx', specifier: require.resolve('eslint-plugin-jsdoc') },
+      { name: '@stylistic', specifier: resolvePlugin('@stylistic/eslint-plugin') },
+      { name: 'prettier', specifier: resolvePlugin('eslint-plugin-prettier') },
+      { name: 'unicornx', specifier: resolvePlugin('eslint-plugin-unicorn') },
+      { name: 'jsdocx', specifier: resolvePlugin('eslint-plugin-jsdoc') },
     ],
     options: { typeAware: true },
     ignorePatterns: ['dist', 'node_modules', 'coverage'],
