@@ -149,6 +149,21 @@ tester.run('comment-syntax', rule, {
       errors: [{ messageId: 'blockSingleLineJSDoc' }],
     },
     {
+      code: '/** See https://example.com for details. */',
+      output: '/**\n * See https://example.com for details.\n */',
+      errors: [{ messageId: 'blockSingleLineJSDoc' }],
+    },
+    {
+      code: '/** proprietary: here be dragons. */',
+      output: '/**\n * proprietary: here be dragons.\n */',
+      options: [{ ignoredPatterns: ['proprietary:'] }],
+      errors: [{ messageId: 'blockSingleLineJSDoc' }],
+    },
+    {
+      code: 'const x = 1; /** Trailing JSDoc. */',
+      errors: [{ messageId: 'blockSingleLineJSDoc' }],
+    },
+    {
       code: `/* this is wrong. */`,
       output: `/* This is wrong. */`,
       errors: [{ messageId: 'blockCapital' }],

@@ -274,6 +274,35 @@ function checkLineComment(context: Rule.RuleContext, comment: AnyComment, option
   }
 }
 
+function isSingleLineJsdocBlock(comment: AnyComment): boolean {
+  return comment.type === 'Block' && comment.value.startsWith('*') && !comment.value.includes('\n');
+}
+
+function checkSingleLineJsdocBlock(context: Rule.RuleContext, comment: AnyComment): void {
+  const loc = comment.loc;
+  const range = comment.range;
+
+  if (!loc || !range) {
+    return;
+  }
+
+  const inner = comment.value.slice(1).trim();
+
+  if (!inner || SINGLE_LINE_JSDOC_TAG.test(inner)) {
+    return;
+  }
+
+  const sourceLine = context.sourceCode.lines[loc.start.line - 1] ?? '';
+  const prefix = sourceLine.slice(0, loc.start.column);
+  const canFix = /^\s*$/.test(prefix);
+
+  context.report({
+    loc,
+    messageId: 'blockSingleLineJSDoc',
+    fix: canFix ? (fixer) => fixer.replaceTextRange(range, `/**\n${prefix} * ${inner}\n${prefix} */`) : undefined,
+  });
+}
+
 function checkSingleLineBlock(context: Rule.RuleContext, comment: AnyComment, options: ResolvedOptions): void {
   const { block } = options;
   const raw = comment.value;
@@ -287,31 +316,6 @@ function checkSingleLineBlock(context: Rule.RuleContext, comment: AnyComment, op
   const trimmed = raw.trim();
 
   if (!trimmed) {
-    return;
-  }
-
-  if (raw.startsWith('*')) {
-    const inner = raw.slice(1).trim();
-
-    if (!inner) {
-      return;
-    }
-
-    if (SINGLE_LINE_JSDOC_TAG.test(inner)) {
-      return;
-    }
-
-    const sourceCode = context.sourceCode;
-    const sourceLine = sourceCode.lines[loc.start.line - 1] ?? '';
-    const prefix = sourceLine.slice(0, loc.start.column);
-    const canFix = /^\s*$/.test(prefix);
-
-    context.report({
-      loc,
-      messageId: 'blockSingleLineJSDoc',
-      fix: canFix ? (fixer) => fixer.replaceTextRange(range, `/**\n${prefix} * ${inner}\n${prefix} */`) : undefined,
-    });
-
     return;
   }
 
@@ -701,7 +705,18 @@ const rule: Rule.RuleModule = {
         const comments = sourceCode.getAllComments();
 
         for (const comment of comments) {
-          if (isHashbang(comment) || shouldSkipComment(comment.value, options)) {
+          if (isHashbang(comment)) {
+            continue;
+          }
+
+          // the shape check must run before `shouldSkipComment`, whose URL/pattern exemptions only apply to wording
+          if (isSingleLineJsdocBlock(comment)) {
+            checkSingleLineJsdocBlock(context, comment);
+
+            continue;
+          }
+
+          if (shouldSkipComment(comment.value, options)) {
             continue;
           }
 
