@@ -77,6 +77,7 @@ export const createOxlintConfig = (options?: CreateConfigOptions): OxlintConfig 
         { allowInObjects: true, allowInArrays: true, allowInInterfaces: true },
       ],
       '@d3lm/no-implicit-object-return': 'error',
+      '@d3lm/no-blank-line-between-imports': 'error',
 
       'prettier/prettier': ['error', {}],
 

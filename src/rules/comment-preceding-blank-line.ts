@@ -98,6 +98,34 @@ const rule: Rule.RuleModule = {
       return false;
     }
 
+    function findEnclosingImport(index: number): Rule.Node | undefined {
+      let current = (sourceCode.getNodeByRangeIndex(index) ?? undefined) as Rule.Node | undefined;
+
+      while (current && current.type !== 'ImportDeclaration') {
+        current = (current.parent ?? undefined) as Rule.Node | undefined;
+      }
+
+      return current;
+    }
+
+    /**
+     * Imports must form a single block (see `no-blank-line-between-imports`),
+     * so a comment between two imports can't be preceded by a blank line.
+     */
+    function isBetweenImports(comment: Comment): boolean {
+      const tokenBefore = sourceCode.getTokenBefore(comment as unknown as Rule.Node);
+      const tokenAfter = sourceCode.getTokenAfter(comment as unknown as Rule.Node);
+
+      if (!tokenBefore || !tokenAfter) {
+        return false;
+      }
+
+      const importBefore = findEnclosingImport(tokenBefore.range[0]);
+      const importAfter = findEnclosingImport(tokenAfter.range[0]);
+
+      return importBefore !== undefined && importAfter !== undefined && importBefore !== importAfter;
+    }
+
     function isAtBlockStart(comment: Comment): boolean {
       const tokenBefore = sourceCode.getTokenBefore(comment as unknown as Rule.Node, {
         includeComments: false,
@@ -134,6 +162,10 @@ const rule: Rule.RuleModule = {
           }
 
           if (isCommentAllowedByEnclosure(comment)) {
+            continue;
+          }
+
+          if (isBetweenImports(comment)) {
             continue;
           }
 

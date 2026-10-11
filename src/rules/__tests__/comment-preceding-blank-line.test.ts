@@ -86,8 +86,47 @@ tester.run('comment-preceding-blank-line', rule, {
       `,
       options: [{ allowInObjects: true }],
     },
+    {
+      code: stripIndent`
+        import foo from 'foo';
+        // between imports
+        import bar from 'bar';
+      `,
+    },
   ],
   invalid: [
+    {
+      code: stripIndent`
+        import foo from 'foo';
+        // not between two imports
+        const a = foo;
+      `,
+      output: stripIndent`
+        import foo from 'foo';
+
+        // not between two imports
+        const a = foo;
+      `,
+      errors: [{ messageId: 'missingBlankLine' }],
+    },
+    {
+      code: stripIndent`
+        import {
+          a,
+          // inside a single import
+          b,
+        } from 'foo';
+      `,
+      output: stripIndent`
+        import {
+          a,
+
+          // inside a single import
+          b,
+        } from 'foo';
+      `,
+      errors: [{ messageId: 'missingBlankLine' }],
+    },
     {
       code: stripIndent`
         const a = 1;

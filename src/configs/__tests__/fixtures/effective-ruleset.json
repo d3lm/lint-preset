@@ -24,6 +24,9 @@
     "@d3lm/newline-around-multiline": [
       "error"
     ],
+    "@d3lm/no-blank-line-between-imports": [
+      "error"
+    ],
     "@d3lm/no-implicit-object-return": [
       "error"
     ],
@@ -1072,6 +1075,9 @@
       "error"
     ],
     "@d3lm/newline-around-multiline": [
+      "error"
+    ],
+    "@d3lm/no-blank-line-between-imports": [
       "error"
     ],
     "@d3lm/no-implicit-object-return": [

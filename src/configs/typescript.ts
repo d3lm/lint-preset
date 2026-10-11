@@ -1,5 +1,4 @@
 import type { Linter } from 'eslint';
-
 import { jsRulesOxlint, type JavaScriptRuleOptions } from './javascript.js';
 
 export const tsFileExtensions = ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'];
