@@ -9,20 +9,48 @@ interface Comment {
 
 type TokenOrComment = AST.Token | Comment;
 
+interface RuleOptions {
+  groups?: string[];
+}
+
 const rule: Rule.RuleModule = {
   meta: {
     type: 'layout',
     docs: {
-      description: 'Disallow blank lines between import declarations so all imports form a single block.',
+      description:
+        'Disallow blank lines between import declarations so all imports form a single block, optionally allowing blank lines between configured groups.',
     },
     fixable: 'whitespace',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          groups: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       blankLineBetweenImports: 'Imports must form a single block without blank lines.',
     },
   },
   create(context) {
     const sourceCode = context.sourceCode;
+
+    const options = (context.options[0] as RuleOptions | undefined) ?? {};
+
+    const groupPatterns = (options.groups ?? []).map((pattern) => new RegExp(pattern, 'u'));
+
+    /**
+     * Imports matching none of the patterns share the implicit `-1` group, so
+     * a blank line is only allowed where the group changes.
+     */
+    function getGroup(source: unknown): number {
+      return groupPatterns.findIndex((pattern) => pattern.test(String(source)));
+    }
 
     function checkGap(left: TokenOrComment, right: TokenOrComment) {
       if (!left.loc || !right.loc || !left.range || !right.range) {
@@ -55,6 +83,10 @@ const rule: Rule.RuleModule = {
           const current = body[index];
 
           if (previous.type !== 'ImportDeclaration' || current.type !== 'ImportDeclaration') {
+            continue;
+          }
+
+          if (getGroup(previous.source.value) !== getGroup(current.source.value)) {
             continue;
           }
 
