@@ -74,7 +74,7 @@ export const createOxlintConfig = (options?: CreateConfigOptions): OxlintConfig 
       '@d3lm/comment-syntax': 'error',
       '@d3lm/comment-preceding-blank-line': [
         'error',
-        { allowInObjects: true, allowInArrays: true, allowInInterfaces: true },
+        { allowInObjects: true, allowInArrays: true, allowInInterfaces: true, allowInUnions: true },
       ],
       '@d3lm/no-implicit-object-return': 'error',
       '@d3lm/no-blank-line-between-imports': 'error',

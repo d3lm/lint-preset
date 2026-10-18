@@ -11,7 +11,10 @@ interface RuleOptions {
   allowInObjects?: boolean;
   allowInArrays?: boolean;
   allowInInterfaces?: boolean;
+  allowInUnions?: boolean;
 }
+
+const UNION_OR_INTERSECTION_TYPES = new Set(['TSUnionType', 'TSIntersectionType']);
 
 const rule: Rule.RuleModule = {
   meta: {
@@ -34,6 +37,9 @@ const rule: Rule.RuleModule = {
           allowInInterfaces: {
             type: 'boolean',
           },
+          allowInUnions: {
+            type: 'boolean',
+          },
         },
         additionalProperties: false,
       },
@@ -50,6 +56,7 @@ const rule: Rule.RuleModule = {
     const allowInObjects = options.allowInObjects ?? false;
     const allowInArrays = options.allowInArrays ?? false;
     const allowInInterfaces = options.allowInInterfaces ?? false;
+    const allowInUnions = options.allowInUnions ?? false;
 
     function isChainedCallContext(comment: Comment): boolean {
       if (!comment.range) {
@@ -95,7 +102,27 @@ const rule: Rule.RuleModule = {
         return true;
       }
 
+      if (allowInUnions && UNION_OR_INTERSECTION_TYPES.has(type)) {
+        return true;
+      }
+
       return false;
+    }
+
+    /**
+     * A comment before the leading `|` or `&` of a multiline union or intersection
+     * type describes its first member, so it's treated like a comment at block start.
+     */
+    function isBeforeFirstTypeConstituent(comment: Comment): boolean {
+      const tokenAfter = sourceCode.getTokenAfter(comment as unknown as Rule.Node);
+
+      if (!tokenAfter || (tokenAfter.value !== '|' && tokenAfter.value !== '&')) {
+        return false;
+      }
+
+      const node = sourceCode.getNodeByRangeIndex(tokenAfter.range[0]);
+
+      return node !== null && UNION_OR_INTERSECTION_TYPES.has(node.type) && node.range?.[0] === tokenAfter.range[0];
     }
 
     function findEnclosingImport(index: number): Rule.Node | undefined {
@@ -153,7 +180,7 @@ const rule: Rule.RuleModule = {
             continue;
           }
 
-          if (isAtBlockStart(comment)) {
+          if (isAtBlockStart(comment) || isBeforeFirstTypeConstituent(comment)) {
             continue;
           }
 

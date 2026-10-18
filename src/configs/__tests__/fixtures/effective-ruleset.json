@@ -15,7 +15,8 @@
       {
         "allowInObjects": true,
         "allowInArrays": true,
-        "allowInInterfaces": true
+        "allowInInterfaces": true,
+        "allowInUnions": true
       }
     ],
     "@d3lm/comment-syntax": [
@@ -1068,7 +1069,8 @@
       {
         "allowInObjects": true,
         "allowInArrays": true,
-        "allowInInterfaces": true
+        "allowInInterfaces": true,
+        "allowInUnions": true
       }
     ],
     "@d3lm/comment-syntax": [

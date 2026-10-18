@@ -276,8 +276,122 @@ tsTester.run('comment-preceding-blank-line (typescript)', rule, {
       `,
       options: [{ allowInInterfaces: true }],
     },
+    {
+      code: stripIndent`
+        export type MediaInfo =
+          // a cropped generation shows its crop, with the details of its generation
+          | { kind: 'image-generation'; generation: ImageGeneration; crop?: ImageCrop | null }
+          | { kind: 'video-generation'; generation: VideoGeneration }
+          | { kind: 'asset'; source: AssetSource; dimensions: AssetDimensions | null };
+      `,
+    },
+    {
+      code: stripIndent`
+        interface Media {
+          kind:
+            // leading comment in a property type
+            | 'image'
+            | 'video';
+        }
+      `,
+    },
+    {
+      code: stripIndent`
+        type Kinds = Array<
+          // leading comment in a type argument
+          | 'image'
+          | 'video'
+        >;
+      `,
+    },
+    {
+      code: stripIndent`
+        type Merged =
+          // leading comment in an intersection
+          & { a: 1 }
+          & { b: 2 };
+      `,
+    },
+    {
+      code: stripIndent`
+        type MediaInfo =
+          | { kind: 'image' }
+          // describes the video member
+          | { kind: 'video' }
+          // describes the asset member
+          | { kind: 'asset' };
+      `,
+      options: [{ allowInUnions: true }],
+    },
+    {
+      code: stripIndent`
+        type Merged =
+          & { a: 1 }
+          // describes the second member
+          & { b: 2 };
+      `,
+      options: [{ allowInUnions: true }],
+    },
   ],
   invalid: [
+    {
+      code: stripIndent`
+        type MediaInfo =
+          | { kind: 'image' }
+          // needs a blank line without the option
+          | { kind: 'video' };
+      `,
+      output: stripIndent`
+        type MediaInfo =
+          | { kind: 'image' }
+
+          // needs a blank line without the option
+          | { kind: 'video' };
+      `,
+      errors: [{ messageId: 'missingBlankLine' }],
+    },
+    {
+      // allowInInterfaces must not relax the rule for unions
+      code: stripIndent`
+        type MediaInfo =
+          | { kind: 'image' }
+          // still needs a blank line
+          | { kind: 'video' };
+      `,
+      options: [{ allowInInterfaces: true }],
+      output: stripIndent`
+        type MediaInfo =
+          | { kind: 'image' }
+
+          // still needs a blank line
+          | { kind: 'video' };
+      `,
+      errors: [{ messageId: 'missingBlankLine' }],
+    },
+    {
+      // allowInUnions must not relax the rule for members inside a union's object type
+      code: stripIndent`
+        type MediaInfo =
+          | {
+              kind: 'image';
+              // still needs a blank line
+              crop: ImageCrop;
+            }
+          | { kind: 'video' };
+      `,
+      options: [{ allowInUnions: true }],
+      output: stripIndent`
+        type MediaInfo =
+          | {
+              kind: 'image';
+
+              // still needs a blank line
+              crop: ImageCrop;
+            }
+          | { kind: 'video' };
+      `,
+      errors: [{ messageId: 'missingBlankLine' }],
+    },
     {
       code: stripIndent`
         interface EditorLayout {
