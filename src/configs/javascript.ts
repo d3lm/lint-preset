@@ -146,6 +146,8 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     replacements = {},
   } = preventAbbreviationsOptions ?? {};
 
+  const effectiveAllowList = inheritAllowList ? [...DEFAULT_ABBREVIATION_ALLOW_LIST, ...allowList] : allowList;
+
   return {
     'consistent-return': 'error',
     curly: ['error', 'all'],
@@ -215,12 +217,7 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
       'error',
       {
         replacements: inheritReplacements ? { ...ABBREVIATION_REPLACEMENTS, ...replacements } : replacements,
-        allowList: Object.fromEntries(
-          (inheritAllowList ? [...DEFAULT_ABBREVIATION_ALLOW_LIST, ...allowList] : allowList).map((name) => [
-            name,
-            true,
-          ]),
-        ),
+        allowList: Object.fromEntries(effectiveAllowList.map((name) => [name, true])),
       },
     ],
 

@@ -31,6 +31,9 @@
     "@d3lm/no-implicit-object-return": [
       "error"
     ],
+    "@d3lm/no-member-access-on-ternary": [
+      "error"
+    ],
     "@stylistic/brace-style": [
       "error",
       "1tbs"
@@ -1083,6 +1086,9 @@
       "error"
     ],
     "@d3lm/no-implicit-object-return": [
+      "error"
+    ],
+    "@d3lm/no-member-access-on-ternary": [
       "error"
     ],
     "@stylistic/brace-style": [

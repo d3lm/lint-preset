@@ -78,6 +78,7 @@ export const createOxlintConfig = (options?: CreateConfigOptions): OxlintConfig 
       ],
       '@d3lm/no-implicit-object-return': 'error',
       '@d3lm/no-blank-line-between-imports': 'error',
+      '@d3lm/no-member-access-on-ternary': 'error',
 
       'prettier/prettier': ['error', {}],
 
