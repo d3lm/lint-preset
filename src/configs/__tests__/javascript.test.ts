@@ -58,6 +58,7 @@ tester.run(
         code: stripIndent`
           first = 1;
           second = 2;
+
           track(first, second);
         `,
         options: paddingLineEntries,
@@ -80,6 +81,34 @@ tester.run(
           expect(row.stateRevision).toBeGreaterThanOrEqual(lastStateRevision);
 
           lastStateRevision = row.stateRevision;
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'expectedBlankLine' }],
+      },
+      {
+        code: stripIndent`
+          lingerTimerRef.current = undefined;
+          setHoveredIndex(null);
+          setTooltipIndex(null);
+        `,
+        output: stripIndent`
+          lingerTimerRef.current = undefined;
+
+          setHoveredIndex(null);
+          setTooltipIndex(null);
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'expectedBlankLine' }],
+      },
+      {
+        code: stripIndent`
+          state.count += 1;
+          await flush();
+        `,
+        output: stripIndent`
+          state.count += 1;
+
+          await flush();
         `,
         options: paddingLineEntries,
         errors: [{ messageId: 'expectedBlankLine' }],

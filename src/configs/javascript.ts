@@ -88,6 +88,14 @@ export const paddingLineEntries = [
     },
     next: { selector: 'ExpressionStatement[expression.type="AssignmentExpression"]' },
   },
+  {
+    blankLine: 'always',
+    prev: { selector: 'ExpressionStatement[expression.type="AssignmentExpression"]' },
+    next: {
+      selector:
+        'ExpressionStatement:matches([expression.type="CallExpression"], [expression.type="AwaitExpression"][expression.argument.type="CallExpression"])',
+    },
+  },
   /**
    * Imports form a block: padded from anything that isn't an import, but
    * consecutive imports can sit together. The same-type rule comes last so it

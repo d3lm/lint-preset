@@ -188,6 +188,15 @@
       },
       {
         "blankLine": "always",
+        "prev": {
+          "selector": "ExpressionStatement[expression.type=\"AssignmentExpression\"]"
+        },
+        "next": {
+          "selector": "ExpressionStatement:matches([expression.type=\"CallExpression\"], [expression.type=\"AwaitExpression\"][expression.argument.type=\"CallExpression\"])"
+        }
+      },
+      {
+        "blankLine": "always",
         "prev": "import",
         "next": "*"
       },
@@ -1270,6 +1279,15 @@
         },
         "next": {
           "selector": "ExpressionStatement[expression.type=\"AssignmentExpression\"]"
+        }
+      },
+      {
+        "blankLine": "always",
+        "prev": {
+          "selector": "ExpressionStatement[expression.type=\"AssignmentExpression\"]"
+        },
+        "next": {
+          "selector": "ExpressionStatement:matches([expression.type=\"CallExpression\"], [expression.type=\"AwaitExpression\"][expression.argument.type=\"CallExpression\"])"
         }
       },
       {
