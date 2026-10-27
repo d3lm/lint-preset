@@ -624,6 +624,7 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
 
     if (block.enforceParamStyle && /^@param\s/.test(text)) {
       checkParameterLine(context, comment, lines, index, text, starSegment, spaces);
+
       previousText = undefined;
     } else {
       previousText = text;

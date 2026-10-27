@@ -46,8 +46,57 @@ tester.run(
         `,
         options: paddingLineEntries,
       },
+      {
+        code: stripIndent`
+          expect(row.stateRevision).toBeGreaterThanOrEqual(lastStateRevision);
+
+          lastStateRevision = row.stateRevision;
+        `,
+        options: paddingLineEntries,
+      },
+      {
+        code: stripIndent`
+          first = 1;
+          second = 2;
+          track(first, second);
+        `,
+        options: paddingLineEntries,
+      },
+      {
+        code: stripIndent`
+          track(first);
+          track(second);
+        `,
+        options: paddingLineEntries,
+      },
     ],
     invalid: [
+      {
+        code: stripIndent`
+          expect(row.stateRevision).toBeGreaterThanOrEqual(lastStateRevision);
+          lastStateRevision = row.stateRevision;
+        `,
+        output: stripIndent`
+          expect(row.stateRevision).toBeGreaterThanOrEqual(lastStateRevision);
+
+          lastStateRevision = row.stateRevision;
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'expectedBlankLine' }],
+      },
+      {
+        code: stripIndent`
+          await flush();
+          state.count += 1;
+        `,
+        output: stripIndent`
+          await flush();
+
+          state.count += 1;
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'expectedBlankLine' }],
+      },
       {
         code: stripIndent`
           const result = await host.api.readDirectory(path, processPid);
