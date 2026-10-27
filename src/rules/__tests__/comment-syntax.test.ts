@@ -136,6 +136,14 @@ tester.run('comment-syntax', rule, {
     },
     `#!/usr/bin/env node\nconsole.log('hi');`,
     `#!/usr/bin/env -S node --enable-source-maps\nconsole.log('hi');`,
+    `// ${'a'.repeat(117)}`,
+    `// see https://example.com/${'a'.repeat(120)}`,
+    `// @ts-expect-error ${'a'.repeat(120)}`,
+    {
+      code: `// ${'a'.repeat(150)}`,
+      options: [{ line: { maxLength: 200 } }],
+    },
+    `/* A ${'a'.repeat(150)}. */`,
   ],
   invalid: [
     {
@@ -329,6 +337,23 @@ tester.run('comment-syntax', rule, {
          */
       `,
       errors: [{ messageId: 'paramMissingDash' }, { messageId: 'paramMissingDash' }],
+    },
+    {
+      code: `// ${'a'.repeat(118)}`,
+      errors: [{ messageId: 'lineMaxLength', data: { maxLength: '120' } }],
+    },
+    {
+      code: `const x = 1; // ${'a'.repeat(110)}`,
+      errors: [{ messageId: 'lineMaxLength' }],
+    },
+    {
+      code: `// TODO ${'a'.repeat(120)}`,
+      errors: [{ messageId: 'lineMaxLength' }],
+    },
+    {
+      code: `// ${'a'.repeat(80)}`,
+      options: [{ line: { maxLength: 80 } }],
+      errors: [{ messageId: 'lineMaxLength', data: { maxLength: '80' } }],
     },
   ],
 });

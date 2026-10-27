@@ -16,6 +16,10 @@ interface RuleOptions {
 
 const UNION_OR_INTERSECTION_TYPES = new Set(['TSUnionType', 'TSIntersectionType']);
 
+function isMultiLineBlock(comment: { type: string; value: string }): boolean {
+  return comment.type === 'Block' && comment.value.includes('\n');
+}
+
 const rule: Rule.RuleModule = {
   meta: {
     type: 'layout',
@@ -165,6 +169,30 @@ const rule: Rule.RuleModule = {
       return ['{', '(', '['].includes(tokenBefore.value);
     }
 
+    function isExempt(comment: Comment): boolean {
+      return (
+        isAtBlockStart(comment) ||
+        isBeforeFirstTypeConstituent(comment) ||
+        isChainedCallContext(comment) ||
+        isCommentAllowedByEnclosure(comment) ||
+        isBetweenImports(comment)
+      );
+    }
+
+    /**
+     * Stacked multi-line block comments must always be separated by a blank line,
+     * even where the exemptions would let a comment hug the preceding line.
+     */
+    function followsMultiLineBlock(comment: Comment): boolean {
+      if (!isMultiLineBlock(comment)) {
+        return false;
+      }
+
+      const previous = sourceCode.getTokenBefore(comment as unknown as Rule.Node, { includeComments: true });
+
+      return previous !== null && isMultiLineBlock(previous);
+    }
+
     return {
       Program() {
         const comments = sourceCode.getAllComments();
@@ -180,19 +208,7 @@ const rule: Rule.RuleModule = {
             continue;
           }
 
-          if (isAtBlockStart(comment) || isBeforeFirstTypeConstituent(comment)) {
-            continue;
-          }
-
-          if (isChainedCallContext(comment)) {
-            continue;
-          }
-
-          if (isCommentAllowedByEnclosure(comment)) {
-            continue;
-          }
-
-          if (isBetweenImports(comment)) {
+          if (!followsMultiLineBlock(comment) && isExempt(comment)) {
             continue;
           }
 

@@ -12,6 +12,7 @@ interface LineOptions {
   readonly requireLowercase: boolean;
   readonly forbidTrailingPunctuation: boolean;
   readonly allowedEndings: readonly string[];
+  readonly maxLength: number;
 }
 
 interface BlockOptions {
@@ -40,6 +41,7 @@ type MessageId =
   | 'lineLeadingSpace'
   | 'lineLowercase'
   | 'lineTrailingPunctuation'
+  | 'lineMaxLength'
   | 'blockCapital'
   | 'blockTrailingPunctuation'
   | 'blockSingleLineJSDoc'
@@ -89,6 +91,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
     requireLowercase: true,
     forbidTrailingPunctuation: true,
     allowedEndings: DEFAULT_LINE_ENDINGS,
+    maxLength: 120,
   },
   block: {
     requireCapital: true,
@@ -183,14 +186,9 @@ function isHashbang(comment: AnyComment): boolean {
   );
 }
 
-function shouldSkipComment(value: string, options: ResolvedOptions): boolean {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return true;
-  }
-
-  if (options.ignoreDirectives && (DIRECTIVE_PATTERN.test(trimmed) || TAG_PATTERN.test(trimmed))) {
+// unlike `shouldSkipComment`, this does not exempt TODO-style tags since they can be rewrapped like any other prose
+function isUnwrappable(trimmed: string, options: ResolvedOptions): boolean {
+  if (options.ignoreDirectives && DIRECTIVE_PATTERN.test(trimmed)) {
     return true;
   }
 
@@ -198,13 +196,37 @@ function shouldSkipComment(value: string, options: ResolvedOptions): boolean {
     return true;
   }
 
-  for (const pattern of options.ignoredPatterns) {
-    if (pattern.test(trimmed)) {
-      return true;
-    }
+  return options.ignoredPatterns.some((pattern) => pattern.test(trimmed));
+}
+
+function shouldSkipComment(value: string, options: ResolvedOptions): boolean {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return true;
   }
 
-  return false;
+  if (options.ignoreDirectives && TAG_PATTERN.test(trimmed)) {
+    return true;
+  }
+
+  return isUnwrappable(trimmed, options);
+}
+
+function checkLineCommentLength(context: Rule.RuleContext, comment: AnyComment, options: ResolvedOptions): void {
+  const loc = comment.loc;
+
+  if (!loc || loc.end.column <= options.line.maxLength || isUnwrappable(comment.value.trim(), options)) {
+    return;
+  }
+
+  context.report({
+    loc,
+    messageId: 'lineMaxLength',
+    data: {
+      maxLength: String(options.line.maxLength),
+    },
+  });
 }
 
 function checkLineComment(context: Rule.RuleContext, comment: AnyComment, options: ResolvedOptions): void {
@@ -617,6 +639,8 @@ const messages: Record<MessageId, string> = {
   lineLeadingSpace: 'Line comment should start with a space.',
   lineLowercase: 'Line comment should start with a lowercase letter.',
   lineTrailingPunctuation: 'Line comment should not end with punctuation.',
+  lineMaxLength:
+    'Line comment exceeds the maximum line length of {{maxLength}}; use a multi-line block comment instead.',
   blockCapital: 'Block comment should start with an uppercase letter.',
   blockTrailingPunctuation: 'Block comment should end with punctuation.',
   blockSingleLineJSDoc: 'JSDoc-style block comments (/** ... */) must span multiple lines.',
@@ -669,6 +693,7 @@ const rule: Rule.RuleModule = {
                 items: { type: 'string' },
                 uniqueItems: true,
               },
+              maxLength: { type: 'integer', minimum: 1 },
             },
           },
           block: {
@@ -707,6 +732,10 @@ const rule: Rule.RuleModule = {
         for (const comment of comments) {
           if (isHashbang(comment)) {
             continue;
+          }
+
+          if (comment.type === 'Line') {
+            checkLineCommentLength(context, comment, options);
           }
 
           // the shape check must run before `shouldSkipComment`, whose URL/pattern exemptions only apply to wording

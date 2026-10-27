@@ -93,6 +93,37 @@ tester.run('comment-preceding-blank-line', rule, {
         import bar from 'bar';
       `,
     },
+    stripIndent`
+      /**
+       * Some comment.
+       */
+
+      /**
+       * Some other comment.
+       */
+    `,
+    {
+      code: stripIndent`
+        function foo() {
+          /**
+           * Some comment.
+           */
+          // a line comment may follow a multi-line comment at block start
+          return 1;
+        }
+      `,
+    },
+    {
+      code: stripIndent`
+        function foo() {
+          /* Single-line block. */
+          /**
+           * Multi-line block.
+           */
+          return 1;
+        }
+      `,
+    },
   ],
   invalid: [
     {
@@ -248,6 +279,82 @@ tester.run('comment-preceding-blank-line', rule, {
         }
       `,
       errors: [{ messageId: 'missingBlankLine' }],
+    },
+    {
+      // the comment that opens a file is otherwise exempt
+      code: stripIndent`
+        /**
+         * Some comment.
+         */
+        /**
+         * Some other comment.
+         */
+      `,
+      output: stripIndent`
+        /**
+         * Some comment.
+         */
+
+        /**
+         * Some other comment.
+         */
+      `,
+      errors: [{ messageId: 'missingBlankLine', line: 4 }],
+    },
+    {
+      code: stripIndent`
+        function foo() {
+          /**
+           * First.
+           */
+          /**
+           * Second.
+           */
+          return 1;
+        }
+      `,
+      output: stripIndent`
+        function foo() {
+          /**
+           * First.
+           */
+
+          /**
+           * Second.
+           */
+          return 1;
+        }
+      `,
+      errors: [{ messageId: 'missingBlankLine', line: 5 }],
+    },
+    {
+      code: stripIndent`
+        const obj = {
+          a: 1,
+          /**
+           * First.
+           */
+          /**
+           * Second.
+           */
+          b: 2,
+        };
+      `,
+      options: [{ allowInObjects: true }],
+      output: stripIndent`
+        const obj = {
+          a: 1,
+          /**
+           * First.
+           */
+
+          /**
+           * Second.
+           */
+          b: 2,
+        };
+      `,
+      errors: [{ messageId: 'missingBlankLine', line: 6 }],
     },
   ],
 });
@@ -429,6 +536,33 @@ tsTester.run('comment-preceding-blank-line (typescript)', rule, {
         }
       `,
       errors: [{ messageId: 'missingBlankLine' }],
+    },
+    {
+      code: stripIndent`
+        interface EditorLayout {
+          /**
+           * First.
+           */
+          /**
+           * Second.
+           */
+          handleMount(id: string): OnMount;
+        }
+      `,
+      options: [{ allowInInterfaces: true }],
+      output: stripIndent`
+        interface EditorLayout {
+          /**
+           * First.
+           */
+
+          /**
+           * Second.
+           */
+          handleMount(id: string): OnMount;
+        }
+      `,
+      errors: [{ messageId: 'missingBlankLine', line: 5 }],
     },
   ],
 });
