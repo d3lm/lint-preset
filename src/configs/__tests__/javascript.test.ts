@@ -1,8 +1,8 @@
 import stylisticPlugin from '@stylistic/eslint-plugin';
 import { stripIndent } from 'common-tags';
-import { RuleTester } from 'eslint';
+import { Linter, RuleTester } from 'eslint';
 import jsdocPlugin from 'eslint-plugin-jsdoc';
-import { jsdocTagLineOptions, paddingLineEntries } from '../javascript.js';
+import { jsdocTagLineOptions, jsRulesOxlint, paddingLineEntries } from '../javascript.js';
 
 const tester = new RuleTester({
   languageOptions: {
@@ -155,6 +155,34 @@ tester.run(
     ],
   },
 );
+
+describe('javascript no-return-assign config', () => {
+  const linter = new Linter();
+  const rules = { 'no-return-assign': jsRulesOxlint()['no-return-assign'] };
+  const lint = (code: string) => linter.verify(code, { rules }).map((message) => message.messageId);
+
+  it('allows assigning before returning', () => {
+    expect(
+      lint(stripIndent`
+        function reject(error) {
+          this.body = Promise.reject(error);
+
+          return this.body;
+        }
+      `),
+    ).toEqual([]);
+  });
+
+  it('forbids parenthesized assignments in return statements', () => {
+    expect(lint('function reject(error) { return (this.body = Promise.reject(error)); }')).toEqual([
+      'returnAssignment',
+    ]);
+  });
+
+  it('forbids assignments as arrow function bodies', () => {
+    expect(lint('const assign = (value) => (target.value = value);')).toEqual(['arrowAssignment']);
+  });
+});
 
 const tagLinesRule = jsdocPlugin.rules?.['tag-lines'];
 

@@ -175,6 +175,7 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     'no-case-declarations': 'error',
     'default-case-last': 'error',
     'no-cond-assign': 'error',
+    'no-return-assign': ['error', 'always'],
     'no-dynamic-delete': 'off',
     'no-unneeded-ternary': 'error',
     'object-shorthand': 'error',

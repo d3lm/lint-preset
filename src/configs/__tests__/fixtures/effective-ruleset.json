@@ -553,6 +553,10 @@
     "no-debugger": [
       "warn"
     ],
+    "no-return-assign": [
+      "error",
+      "always"
+    ],
     "no-unneeded-ternary": [
       "error"
     ],
@@ -1369,6 +1373,10 @@
     ],
     "no-debugger": [
       "warn"
+    ],
+    "no-return-assign": [
+      "error",
+      "always"
     ],
     "no-unneeded-ternary": [
       "error"
