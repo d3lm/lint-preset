@@ -271,6 +271,109 @@ describe('analyzeSource', () => {
         expect(fixed.split('\n').every((line) => line.length <= 102)).toBe(true);
         expect(fix(fixed, settings)).toBe(fixed);
       });
+
+      describe('the layout for a wider width', () => {
+        const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+        const issuesOf = (source: string, overrides: Partial<AnalyzeOptions>): string[] => {
+          return analyzeSource(source, 'file.ts', { ...options, ...overrides }).flatMap((comment) =>
+            comment.paragraphs.flatMap((paragraph) =>
+              paragraph.issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`),
+            ),
+          );
+        };
+
+        // the layout for a width of 105, with lines of 105, 104, 103, and 58 columns
+        const wider = jsdoc(
+          'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and `RelayAnyDatagram`.',
+          'It owns the client-to-remote queue and its pump, the backend closed watcher, and the idempotent death',
+          'path, so a lifecycle fix lands in both channel kinds at once. Only the per-kind frame validation and',
+          'the recv-to-frame mapping stay in the concrete classes.',
+        );
+
+        // the layout for the width itself
+        const preferred = jsdoc(
+          'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and',
+          '`RelayAnyDatagram`. It owns the client-to-remote queue and its pump, the backend closed watcher,',
+          'and the idempotent death path, so a lifecycle fix lands in both channel kinds at once. Only the',
+          'per-kind frame validation and the recv-to-frame mapping stay in the concrete classes.',
+        );
+
+        it('accepts the layout for a width within the tolerance, and keeps it as it is', () => {
+          expect(issuesOf(wider, { ...settings, width: 105, tolerance: 0 })).toEqual([]);
+          expect(issuesOf(wider, settings)).toEqual([]);
+          expect(fix(wider, settings)).toBe(wider);
+        });
+
+        it('accepts it without a hard maximum too', () => {
+          const legacy = { width: 100, tolerance: 5 };
+
+          expect(issuesOf(wider, legacy)).toEqual([]);
+          expect(fix(wider, legacy)).toBe(wider);
+        });
+
+        it('accepts it when its lines happen to stay within the width', () => {
+          const within = jsdoc(
+            'Records the state of every file with uncommitted changes, to compare it with a later snapshot.',
+            'Returns `undefined` outside of a git repository, where only reading every file would show',
+            'which ones changed.',
+          );
+
+          expect(issuesOf(within, { ...settings, width: 105, tolerance: 0 })).toEqual([]);
+          expect(issuesOf(within, settings)).toEqual([]);
+          expect(issuesOf(within, { ...settings, tolerance: 0 })).toEqual(['2:unbalanced:verdict']);
+        });
+
+        it('reports it when the tolerance is too small, and still wraps to the width itself', () => {
+          const small = { ...settings, tolerance: 4 };
+
+          expect(issuesOf(wider, small)).toEqual(['2:unbalanced:verdict']);
+          expect(fix(wider, small)).toBe(preferred);
+          expect(fix(preferred, settings)).toBe(preferred);
+        });
+
+        it('reports it as overflow when the hard maximum is too small, however large the tolerance', () => {
+          expect(issuesOf(wider, { width: 100, maxWidth: 102, tolerance: 50 })).toEqual([
+            '2:overflow:verdict',
+            '3:overflow:verdict',
+            '4:overflow:verdict',
+          ]);
+        });
+
+        it('reports a paragraph that goes past the width with the layout for no width', () => {
+          const moved = jsdoc(
+            'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and `RelayAnyDatagram`.',
+            'It owns the client-to-remote queue and its pump, the backend closed watcher, and the idempotent',
+            'death path, so a lifecycle fix lands in both channel kinds at once. Only the per-kind frame',
+            'validation and the recv-to-frame mapping stay in the concrete classes.',
+          );
+
+          expect(issuesOf(moved, settings)).toEqual(['2:unbalanced:verdict']);
+          expect(fix(moved, settings)).toBe(preferred);
+        });
+
+        it('keeps a hint and its suggestion, since a hint is for the agent to decide', () => {
+          const narrow = { width: 82, maxWidth: 102, tolerance: 5 };
+
+          // the layout for a width of 84, whose second line ends with the first two words of a sentence
+          const stranded = jsdoc(
+            'Sets how many columns prose lines may go past `width` when that saves a line in a',
+            'paragraph of three or more lines. It never goes past `maxWidth`. When `maxWidth`',
+            'is omitted, it also sets a legacy hard limit of `width + tolerance`.',
+          );
+
+          expect(issuesOf(stranded, { ...narrow, width: 84, tolerance: 3 })).toEqual([]);
+          expect(issuesOf(stranded, narrow)).toEqual(['3:orphan:hint']);
+
+          expect(fix(stranded, narrow)).toBe(
+            jsdoc(
+              'Sets how many columns prose lines may go past `width` when that saves a line in a',
+              'paragraph of three or more lines. It never goes past `maxWidth`. When `maxWidth` is',
+              'omitted, it also sets a legacy hard limit of `width + tolerance`.',
+            ),
+          );
+        });
+      });
     });
   });
 
@@ -2315,6 +2418,50 @@ describe('rewrap invariants', () => {
     }
 
     expect(checked).toBe(600);
+  });
+
+  it('has no verdict for the layout for any width within the tolerance, and keeps it as it is', () => {
+    const { random, between, comment } = randomComments(4099, ['(one)', 'b)']);
+
+    // a hint may stay, and a word that is too long for a line on its own stays an overflow
+    const NO_VERDICT = /:(?:orphan|split-parenthetical|overflow)$/;
+
+    let checked = 0;
+
+    for (let run = 0; run < 400; run += 1) {
+      const source = comment();
+      const width = between(16, 100);
+      const tolerance = between(1, 8);
+      const extra = between(1, tolerance);
+
+      const overrides: Partial<AnalyzeOptions> = {
+        width,
+        ...(random() < 0.6 ? { maxWidth: width + tolerance + between(0, 30) } : {}),
+        tolerance,
+        avoidSentenceOrphans: random() < 0.7,
+        style: false,
+      };
+
+      // a paragraph that the wider width keeps as written has the layout for the width itself
+      const wider = fix(fix(source, overrides), { ...overrides, width: width + extra, tolerance: tolerance - extra });
+      const context = `${JSON.stringify({ ...overrides, extra })}\n${source}\n${wider}`;
+      const verdicts = layoutIssues(wider, overrides).filter((issue) => !NO_VERDICT.test(issue));
+
+      expect(verdicts, context).toEqual([]);
+
+      // without a hard maximum, a paragraph with fewer lines than its suggestion has no issue either way
+      const kept = analyzeSource(wider, 'file.ts', { ...options, ...overrides }).filter((report) => {
+        return overrides.maxWidth !== undefined && !isSuspicious(report);
+      });
+
+      for (const report of kept) {
+        expect(rewrapComment(report), context).toBe(report.text);
+      }
+
+      checked += 1;
+    }
+
+    expect(checked).toBe(400);
   });
 });
 

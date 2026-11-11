@@ -62,7 +62,8 @@ Config overrides (take precedence over the config file):
   --width <n>             Preferred comment line length
   --max-width <n>         Hard limit for prose (default: 120, never below width)
   --single-line-width <n> Longest line a one-paragraph comment may stay on (default: 120)
-  --tolerance <n>         Columns prose may go past width to save a line, within max-width (default: 0)
+  --tolerance <n>         Columns prose may go past width to save a line, within max-width (default: 0).
+                          A paragraph that has the layout for a width up to that much wider also passes
   --[no-]orphans          Keep a sentence's first word off the end of a line, and end the first of two lines
                           with a sentence when the second is no longer than the first (default: on)
   --[no-]style            Look for possible semicolons, em-dashes, dashes, label colons, emphasis, and banners

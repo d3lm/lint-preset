@@ -95,7 +95,8 @@ export interface ParagraphReport {
   /**
    * Holds the exact source lines for `startLine` through `endLine` when the paragraph is
    * greedily wrapped to the width, or `null` when the paragraph isn't prose, e.g. code,
-   * a table, a diagram, or `@example`.
+   * a table, a diagram, or `@example`. A paragraph that is accepted with the layout for a
+   * wider width within the tolerance keeps its lines.
    */
   readonly suggestion: readonly string[] | null;
 }
@@ -862,10 +863,10 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
     keepFirstLine: paragraph.kind === 'tag',
   };
 
-  const layOut = (from: readonly string[], settings: LayoutOptions) => {
-    const even = layoutTokens(from, firstLimit, restLimit, settings);
+  const layOut = (from: readonly string[], settings: LayoutOptions, extra: number) => {
+    const even = layoutTokens(from, firstLimit + extra, restLimit + extra, settings);
 
-    return { even, wrapped: breakAfterSentence(even, firstLimit, restLimit, settings) };
+    return { even, wrapped: breakAfterSentence(even, firstLimit + extra, restLimit + extra, settings) };
   };
 
   const units = bindLineStarts(paragraph.kind === 'tag' ? bindTagHead(tokens) : tokens, startsLine);
@@ -899,11 +900,12 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
    * Analyzing the rewrap must find the same prose, so when a new line's start or end would read as
    * structure, like two lines that start with `term - `, the first word of the line that tips it
    * moves up a line. Without such a layout, or when the text reads as structure on a single line,
-   * no rewrap reads as the same prose, and the paragraph is kept as written.
+   * no rewrap reads as the same prose, and the paragraph is kept as written. The lines get `extra`
+   * columns more than the width allows.
    */
-  const settle = (settings: LayoutOptions): { even: string[][]; wrapped: string[][] } | Structure => {
+  const settle = (settings: LayoutOptions, extra = 0): { even: string[][]; wrapped: string[][] } | Structure => {
     let current = units;
-    let { even, wrapped } = layOut(current, settings);
+    let { even, wrapped } = layOut(current, settings, extra);
 
     for (;;) {
       const body = bodyOf(wrapped);
@@ -925,14 +927,29 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
       }
 
       current = current.toSpliced(start - 1, 2, pair);
-      ({ even, wrapped } = layOut(current, settings));
+      ({ even, wrapped } = layOut(current, settings, extra));
     }
   };
 
-  const settled = settle(layoutOptions);
+  /**
+   * Lays the paragraph out for a width that is `extra` columns wider. The columns come out of the
+   * tolerance and out of the room that parentheticals have, so the hard limit stays where it is.
+   */
+  const layoutAt = (extra: number): { even: string[][]; wrapped: string[][] } | Structure => {
+    const settings = {
+      ...layoutOptions,
+      tolerance: layoutOptions.tolerance - extra,
+      parentheticalOverflow:
+        layoutOptions.parentheticalOverflow === undefined ? undefined : layoutOptions.parentheticalOverflow - extra,
+    };
 
-  // the extra lines that keep a line from sticking out can read as structure where the fewest lines don't
-  const layout = 'wrapped' in settled ? settled : settle({ ...layoutOptions, keepSteps: true });
+    const settled = settle(settings, extra);
+
+    // the extra lines that keep a line from sticking out can read as structure where the fewest lines don't
+    return 'wrapped' in settled ? settled : settle({ ...settings, keepSteps: true }, extra);
+  };
+
+  const layout = layoutAt(0);
 
   if (!('wrapped' in layout)) {
     return keep(layout);
@@ -1036,11 +1053,39 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
     }
   }
 
-  const suggestion = wrapped.map(
+  const isVerdict = (issue: LineIssue): boolean => ISSUE_TIERS[issue.type] === 'verdict';
+
+  /**
+   * The tolerance is room past the width, so a paragraph that already has the layout for a width
+   * within the tolerance is fine as it is.
+   */
+  const matchesWiderLayout = (): boolean => {
+    for (let extra = 1; extra <= layoutOptions.tolerance; extra += 1) {
+      const wider = layoutAt(extra);
+
+      if ('wrapped' in wider && sameLayout(wider.wrapped, currentLines)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  /**
+   * A paragraph that only has hints keeps them and its suggestion, since a hint is for the agent to
+   * decide. Only verdicts go, and the suggestion then keeps the lines as they are.
+   */
+  const accepted = lineIssues.some((issue) => isVerdict(issue)) && matchesWiderLayout();
+  const suggested = accepted ? currentLines : wrapped;
+
+  const suggestion = suggested.map(
     (words, position) => `${prefix}${position === 0 ? paragraph.marker : hang}${words.join(' ')}`,
   );
 
-  const wrapIssues = lineIssues.map((issue) => lineIssue(issue.type, paragraph.lines[issue.line], options));
+  const wrapIssues = lineIssues
+    .filter((issue) => !accepted || !isVerdict(issue))
+    .map((issue) => lineIssue(issue.type, paragraph.lines[issue.line], options));
+
   const issues = byLine([...overflow, ...wrapIssues, ...styleIssues(paragraph, options)]);
 
   return { ...base, reflowable: true, issues, suggestion };

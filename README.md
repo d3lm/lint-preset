@@ -273,6 +273,8 @@ A paragraph with an `orphan` hint is not reported as `unbalanced` when that word
 
 In the same way, a paragraph that splits a parenthetical is not reported as `unbalanced` when the split is all that sets it apart from the suggested rewrap, because the split can read as well and keep the line closer to `width`. This holds when the lines before the split match the rewrap and the lines after it match the rewrap of the text after the split. Otherwise the paragraph is still `unbalanced`.
 
+With a `tolerance`, a paragraph has no `underfill`, `widow`, or `unbalanced` verdict when it already has the layout that the tool produces for a wider `width`, up to `width` plus `tolerance`. Its suggestion then keeps the lines as they are. With `width: 100` and `tolerance: 5`, a paragraph that is laid out the way the tool lays it out for a width of 105 passes. A paragraph that only has hints keeps them, and a line past `maxWidth` is still an `overflow`.
+
 Hints are only checked in prose, never in code spans, code blocks, `@example`, or URLs. Rules that can't be measured, like writing complete sentences, are part of the agent's prompt (see `DEFAULT_RULES` in `src/comments/agent.ts`). The prompt treats the style rules as preferences, so the agent keeps punctuation that carries meaning or reads clearly, and never changes code, code spans, literals, patterns, or quotations.
 
 ### Text Kept as Written
@@ -287,7 +289,7 @@ To keep a drawing that is wider than the width, put it in a code fence or add `c
 
 ### Configuration
 
-`width` is the preferred line length, and `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults `maxWidth` to 120, or to `width` if that is larger. The wrapper may go past `width`, up to `maxWidth`, to keep a parenthetical on one line. `tolerance` (default 0) lets lines in paragraphs of three or more lines go that many columns past `width` when that saves a line. A comment that is one paragraph stays on one line up to `singleLineWidth` plus `tolerance`, capped by `maxWidth`. A word or code span longer than `maxWidth` is never split and is reported as `overflow`.
+`width` is the preferred line length, and `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults `maxWidth` to 120, or to `width` if that is larger. The wrapper may go past `width`, up to `maxWidth`, to keep a parenthetical on one line. `tolerance` (default 0) lets lines in paragraphs of three or more lines go that many columns past `width` when that saves a line. `check` also accepts a paragraph that already has the layout for a wider `width`, up to `width` plus `tolerance`, while the tool itself still wraps to `width`. A comment that is one paragraph stays on one line up to `singleLineWidth` plus `tolerance`, capped by `maxWidth`. A word or code span longer than `maxWidth` is never split and is reported as `overflow`.
 
 Like prettier, `comments` looks for a config file in the current directory and its parents, up to the repository root. The config can be a `comments.config.{ts,mts,js,mjs,cjs}`, `.commentsrc`, or `.commentsrc.json` file, or a `comments` key in `package.json`. All options are optional.
 

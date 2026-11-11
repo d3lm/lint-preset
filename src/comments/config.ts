@@ -111,8 +111,9 @@ export interface CommentsConfig {
 
   /**
    * Sets how many columns prose lines may go past `width` when that saves a line in a paragraph of
-   * three or more lines. It never goes past `maxWidth`. When `maxWidth` is omitted, it also sets a
-   * legacy hard limit of `width + tolerance`.
+   * three or more lines. A paragraph that already has the layout for a wider `width`, up to `width`
+   * plus this many columns, also passes as it is. It never goes past `maxWidth`. When `maxWidth` is
+   * omitted, it also sets a legacy hard limit of `width + tolerance`.
    */
   readonly tolerance?: number;
 
