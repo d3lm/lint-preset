@@ -15,6 +15,13 @@ function jsdoc(...lines: string[]): string {
   return `/**\n${lines.map((line) => (line ? ` * ${line}` : ' *')).join('\n')}\n */\n`;
 }
 
+function indented(source: string): string {
+  return source
+    .split('\n')
+    .map((line) => (line ? `        ${line}` : line))
+    .join('\n');
+}
+
 function fix(source: string, overrides: Partial<AnalyzeOptions> = {}): string {
   const lines = source.split('\n');
   const comments = analyzeSource(source, 'file.ts', { ...options, ...overrides });
@@ -218,6 +225,52 @@ describe('analyzeSource', () => {
       expect(lengths.slice(0, -1).every((length) => length >= 100 && length <= 120)).toBe(true);
       expect(after.paragraphs.flatMap((paragraph) => paragraph.issues)).toEqual([]);
       expect(fix(fixed, settings)).toBe(fixed);
+    });
+
+    describe('tolerance', () => {
+      const wrapped = indented(
+        jsdoc(
+          "`EPERM` means the registration was superseded and `EINTR` means the seat's wait queue was cancelled,",
+          'and both mean another context tore the seat down and settled everything, so the pump is done.',
+          'Anything else is unexpected. The seat then unregisters itself so parked guests settle with `EIO`',
+          'instead of queueing forever behind a dead pump, and the loop exits.',
+        ),
+      );
+
+      const fewer = indented(
+        jsdoc(
+          "`EPERM` means the registration was superseded and `EINTR` means the seat's wait queue was",
+          'cancelled, and both mean another context tore the seat down and settled everything, so the',
+          'pump is done. Anything else is unexpected. The seat then unregisters itself so parked guests',
+          'settle with `EIO` instead of queueing forever behind a dead pump, and the loop exits.',
+        ),
+      );
+
+      it('lets lines pass the width by up to the tolerance when that saves a line', () => {
+        const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+        const [after] = analyzeSource(fewer, 'file.ts', { ...options, ...settings });
+
+        expect(fix(wrapped, settings)).toBe(fewer);
+        expect(after.lengths.slice(1, -1)).toEqual([100, 101, 103, 96]);
+        expect(after.paragraphs.flatMap((paragraph) => paragraph.issues)).toEqual([]);
+        expect(fix(fewer, settings)).toBe(fewer);
+      });
+
+      it('wraps to the width without a tolerance', () => {
+        const settings = { width: 100, maxWidth: 120 };
+        const fixed = fix(wrapped, settings);
+
+        expect(fixed.split('\n').slice(1, -2)).toHaveLength(5);
+        expect(fixed.split('\n').every((line) => line.length <= 100)).toBe(true);
+      });
+
+      it('never passes the hard maximum, however large the tolerance', () => {
+        const settings = { width: 100, maxWidth: 102, tolerance: 50 };
+        const fixed = fix(wrapped, settings);
+
+        expect(fixed.split('\n').every((line) => line.length <= 102)).toBe(true);
+        expect(fix(fixed, settings)).toBe(fixed);
+      });
     });
   });
 
@@ -2209,6 +2262,7 @@ describe('rewrap invariants', () => {
       const overrides: Partial<AnalyzeOptions> = {
         width,
         maxWidth: width + between(0, 40),
+        tolerance: between(0, 12),
         avoidSentenceOrphans: random() < 0.7,
         style: random() < 0.5,
       };

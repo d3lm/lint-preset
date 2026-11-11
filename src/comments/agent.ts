@@ -24,7 +24,7 @@ When rules pull in different directions, the earlier one wins.
 
 ## Layout
 
-- After you finish, the tool rewraps prose paragraphs, list items, and JSDoc tag descriptions. The width is a preferred target. A parenthetical may extend a line up to the configured maximum so it stays together. In longer paragraphs, balanced lines take priority over keeping every parenthetical on one line. The tool also avoids short last lines where possible. Leave these line breaks to the tool, except for the sentence-orphan case below.
+- After you finish, the tool rewraps prose paragraphs, list items, and JSDoc tag descriptions. The width is a preferred target. A parenthetical may extend a line up to the configured maximum so it stays together, and lines may go up to the configured tolerance past the width when that saves a line. In longer paragraphs, balanced lines take priority over keeping every parenthetical on one line. The tool also avoids short last lines where possible. Leave these line breaks to the tool, except for the sentence-orphan case below.
 - Don't end a line with the first word of a new sentence, clause, or parenthetical, like \`This\` after a period, \`the\` after a comma, or \`(the\`. Move it to the next line instead.
 - In a paragraph of two lines, the first line ends with a sentence whenever the rest fits on the second line and is no longer than the first. Don't end it with the start of the next sentence, like \`A wrap\` in \`...lay out differently. A wrap\`. Move those words to the second line instead.
 - A comment whose whole text is one paragraph stays on a single line when that line fits a separate, larger single-line width, even past the width. Only a longer comment wraps to the width.

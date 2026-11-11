@@ -41,8 +41,8 @@ Targets are files, directories, file:line, or file:start-end. Without targets, o
 overlapping uncommitted changes (and untracked files) are considered.
 
 Options:
-  --staged          Only consider staged changes
   --base <ref>      Consider changes since the merge base with <ref>
+  --whole-files     Consider every comment in the changed files, not only comments on changed lines
   --repo            Consider every file in the repository
   --suspicious      Only comments with layout issues (overflow, early line ends, last lines of one or two words)
                     or hints (possible orphans, em-dashes, banners, ...). For agent and hook (the default), only
@@ -62,7 +62,7 @@ Config overrides (take precedence over the config file):
   --width <n>             Preferred comment line length
   --max-width <n>         Hard limit for prose (default: 120, never below width)
   --single-line-width <n> Longest line a one-paragraph comment may stay on (default: 120)
-  --tolerance <n>         Legacy hard limit of width + n, unless max-width is set
+  --tolerance <n>         Columns prose may go past width to save a line, within max-width (default: 0)
   --[no-]orphans          Keep a sentence's first word off the end of a line, and end the first of two lines
                           with a sentence when the second is no longer than the first (default: on)
   --[no-]style            Look for possible semicolons, em-dashes, dashes, label colons, emphasis, and banners
@@ -90,8 +90,8 @@ const OPTIONS = {
   'max-files': { type: 'string' },
   'max-agents': { type: 'string' },
   instructions: { type: 'string' },
-  staged: { type: 'boolean' },
   base: { type: 'string' },
+  'whole-files': { type: 'boolean' },
   repo: { type: 'boolean' },
   suspicious: { type: 'boolean' },
   all: { type: 'boolean' },
@@ -205,7 +205,7 @@ async function createProject(cwd: string, values: Values) {
 }
 
 function scopeFrom(positionals: readonly string[], values: Values): Scope {
-  return { targets: positionals, staged: values.staged, base: values.base, repo: values.repo };
+  return { targets: positionals, base: values.base, wholeFiles: values['whole-files'], repo: values.repo };
 }
 
 function selectFrom(values: Values, project: Project): AgentScope {
@@ -283,10 +283,8 @@ function hintEmptyScope(analyses: readonly FileAnalysis[], scope: Scope): void {
   const isDefaultScope = (scope.targets ?? []).length === 0 && !scope.repo && !scope.base;
 
   if (analyses.length === 0 && isDefaultScope) {
-    const changes = scope.staged ? 'staged changes' : 'uncommitted changes';
-
     log(
-      `comments: no ${changes} in JavaScript or TypeScript files. Pass --repo, --base <ref>, or files to widen the scope.`,
+      'comments: no uncommitted changes in JavaScript or TypeScript files. Pass --repo, --base <ref>, or files to widen the scope.',
     );
   }
 }

@@ -8,7 +8,8 @@ export interface WrapOptions {
   readonly avoidSentenceOrphans: boolean;
 
   /**
-   * Sets how many columns a line may exceed its limit before it counts as overflowing.
+   * Sets how many columns a line may exceed its limit before it counts as overflowing. A layout
+   * also uses them when that saves a line.
    */
   readonly tolerance: number;
 
@@ -861,6 +862,25 @@ function layoutLines(
 
     if (!hasWidow(lines)) {
       return lines;
+    }
+  }
+
+  /**
+   * Lines may take up to `tolerance` columns past the limit when that saves a line. A paragraph of
+   * two lines keeps them, since its second line would have to join the first.
+   */
+  if (options.tolerance > 0 && greedy.length > 2) {
+    const fewer = balanceTokens(
+      tokens,
+      firstLimit + options.tolerance,
+      restLimit + options.tolerance,
+      greedy.length - 1,
+      options,
+      restLimit,
+    );
+
+    if (fewer && !hasStep(fewer, restLimit - firstLimit)) {
+      return fewer;
     }
   }
 

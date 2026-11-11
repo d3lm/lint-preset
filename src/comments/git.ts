@@ -10,8 +10,6 @@ import path from 'node:path';
 export type ChangedLines = Map<string, Set<number> | 'all'>;
 
 export interface DiffScope {
-  readonly staged?: boolean;
-
   /**
    * Compare the working tree against the merge base with this ref instead of `HEAD`.
    */
@@ -215,31 +213,14 @@ const DIFF_FLAGS = ['diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames'
 
 export function getChangedLines(root: string, scope: DiffScope = {}): ChangedLines {
   if (!hasHead(root)) {
-    const files = scope.staged
-      ? splitPaths(gitOrThrow(root, ['diff', '-z', '--cached', '--name-only', '--diff-filter=d']))
-      : listFiles(root);
-
-    return new Map(files.map((file) => [file, 'all'] as const));
+    return new Map(listFiles(root).map((file) => [file, 'all'] as const));
   }
 
-  let args: string[];
+  const target = scope.base ? gitOrThrow(root, ['merge-base', scope.base, 'HEAD']).trim() : 'HEAD';
+  const changed = parseUnifiedDiff(gitOrThrow(root, [...DIFF_FLAGS, target]));
 
-  if (scope.staged) {
-    args = [...DIFF_FLAGS, '--cached', 'HEAD'];
-  } else if (scope.base) {
-    const mergeBase = gitOrThrow(root, ['merge-base', scope.base, 'HEAD']).trim();
-
-    args = [...DIFF_FLAGS, mergeBase];
-  } else {
-    args = [...DIFF_FLAGS, 'HEAD'];
-  }
-
-  const changed = parseUnifiedDiff(gitOrThrow(root, args));
-
-  if (!scope.staged) {
-    for (const file of listUntrackedFiles(root)) {
-      changed.set(file, 'all');
-    }
+  for (const file of listUntrackedFiles(root)) {
+    changed.set(file, 'all');
   }
 
   return changed;

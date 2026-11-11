@@ -245,7 +245,7 @@ comments agent                     # hand suspicious comments to an agent, then 
 comments check --cwd ../other-app  # run as if started in another project
 ```
 
-Without targets, only comments in uncommitted changes and untracked files are checked. `--staged` limits that to staged changes, `--base main` checks everything since the merge base with `main`, and `--repo` checks every file. Targets can be files, directories, `file:line`, or `file:start-end`. A comment that contains `comments-ignore` is skipped. A file with a syntax error is skipped as a whole and named in a warning, because the parser stops at the error and never sees the comments after it. JSX is read in `.js` files too.
+Without targets, only comments in uncommitted changes and untracked files are checked. `--base main` checks everything since the merge base with `main`, and `--repo` checks every file. `--whole-files` checks every comment in the changed files instead of only the comments on changed lines. Targets can be files, directories, `file:line`, or `file:start-end`. A comment that contains `comments-ignore` is skipped. A file with a syntax error is skipped as a whole and named in a warning, because the parser stops at the error and never sees the comments after it. JSX is read in `.js` files too.
 
 With `--json`, each paragraph of a comment comes with its issues and a `suggestion` that holds the exact rewrapped lines. Code blocks, `@example`, tables, drawings, directives, and other [text kept as written](#text-kept-as-written) have no suggestion.
 
@@ -294,7 +294,7 @@ A comment with an issue in a part that is kept is handed to the agent, which can
  */
 ```
 
-The separate `singleLineWidth` allowance is capped by `maxWidth`. Code and documented layout regions retain their exemptions. An indivisible token in measured prose that exceeds `maxWidth` is reported as overflow; the wrapper preserves it, so resolving that case requires changing the maximum or the comment manually. The legacy `tolerance` option sets a maximum of `width + tolerance` when `maxWidth` is omitted; an explicit `maxWidth` takes precedence. Direct `analyzeSource` callers can omit `maxWidth` to retain the legacy width/tolerance behavior.
+The separate `singleLineWidth` allowance is capped by `maxWidth`. Code and documented layout regions retain their exemptions. An indivisible token in measured prose that exceeds `maxWidth` is reported as overflow; the wrapper preserves it, so resolving that case requires changing the maximum or the comment manually. `tolerance` lets prose lines go up to that many columns past `width` when that saves a line in a paragraph of three or more lines, and it never goes past `maxWidth`. It defaults to 0. When `maxWidth` is omitted, `tolerance` also sets a legacy maximum of `width + tolerance`. Direct `analyzeSource` callers can omit `maxWidth` to retain the legacy width/tolerance behavior.
 
 Like prettier, `comments` looks for a config file in the current directory and its parents, up to the repository root. The config can be a `comments.config.{ts,mts,js,mjs,cjs}`, `.commentsrc`, or `.commentsrc.json` file, or a `comments` key in `package.json`. All options are optional.
 
@@ -306,6 +306,8 @@ export default defineConfig({
   // defaults to prettier's printWidth, or 80
   width: 100,
   maxWidth: 120,
+  // prose lines may go this many columns past `width` when that saves a line
+  tolerance: 0,
   // a comment that is one paragraph stays on one line up to this length, and wraps to `width` beyond it
   singleLineWidth: 120,
   avoidSentenceOrphans: true,

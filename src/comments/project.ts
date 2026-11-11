@@ -10,8 +10,12 @@ export interface Scope {
    * When empty, the git scope below applies.
    */
   readonly targets?: readonly string[];
-  readonly staged?: boolean;
   readonly base?: string;
+
+  /**
+   * Considers every comment in the files of the git scope instead of only those on changed lines.
+   */
+  readonly wholeFiles?: boolean;
 
   /**
    * Considers every file in the repository instead of only changed lines.
@@ -174,7 +178,7 @@ export class Project {
     }
 
     for (const [file, lines] of getChangedLines(this.root, scope)) {
-      add(path.join(this.root, file), lines);
+      add(path.join(this.root, file), scope.wholeFiles ? 'all' : lines);
     }
 
     return files;

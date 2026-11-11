@@ -109,8 +109,9 @@ export interface CommentsConfig {
   readonly singleLineWidth?: number;
 
   /**
-   * Sets a legacy hard limit of `width + tolerance` when `maxWidth` is omitted.
-   * An explicit `maxWidth` takes precedence.
+   * Sets how many columns prose lines may go past `width` when that saves a line in a paragraph of
+   * three or more lines. It never goes past `maxWidth`. When `maxWidth` is omitted, it also sets a
+   * legacy hard limit of `width + tolerance`.
    */
   readonly tolerance?: number;
 

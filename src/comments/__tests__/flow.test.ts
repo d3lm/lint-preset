@@ -135,6 +135,22 @@ describe('Project', () => {
       [tracked, 1],
     ]);
   });
+
+  it('considers every comment in changed files with `wholeFiles`', async () => {
+    initRepo({ 'a.ts': '/**\n * x\n * y\n */\nexport const a = 1;\n\n/**\n * x\n * y\n */\n' });
+
+    writeFileSync(
+      path.join(directory, 'a.ts'),
+      '/**\n * x\n * y\n */\nexport const a = 1;\n\n/**\n * edited\n * y\n */\n',
+    );
+
+    const project = createProject({});
+    const lines = await project.analyze({});
+    const whole = await project.analyze({ wholeFiles: true });
+
+    expect(lines[0].comments.map((comment) => comment.startLine)).toEqual([7]);
+    expect(whole[0].comments.map((comment) => comment.startLine)).toEqual([1, 7]);
+  });
 });
 
 describe('PrettierOptionsResolver', () => {
