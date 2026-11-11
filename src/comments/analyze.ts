@@ -971,6 +971,12 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
       return !('wrapped' in free) || sameLayout(free.wrapped, currentLines);
     };
 
+    const keepsOnlySentenceStarts = (): boolean => {
+      const free = settle({ ...layoutOptions, ignoreSentenceStarts: true });
+
+      return 'wrapped' in free && (sameLayout(free.even, currentLines) || sameLayout(free.wrapped, currentLines));
+    };
+
     /**
      * Whether a parenthetical stays on one line is for the agent to decide, so a layout that
      * matches the suggestion up to a line that ends inside a parenthetical that the suggestion
@@ -1012,8 +1018,11 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
         0,
       );
 
-      // lines that only miss the break after a sentence are a hint, since a heuristic decides where a sentence ends
-      if (lineIssues.length === 0 && sameLayout(even, currentLines)) {
+      /**
+       * Lines that only miss the break after a sentence, or end with the first words of one, are a
+       * hint, since a heuristic decides where a sentence ends.
+       */
+      if (lineIssues.length === 0 && (sameLayout(even, currentLines) || keepsOnlySentenceStarts())) {
         lineIssues.push({ type: 'orphan', line });
       } else if (lineIssues.length === 0) {
         lineIssues.push({ type: splitsOnlyParenthetical(line) ? 'split-parenthetical' : 'unbalanced', line });

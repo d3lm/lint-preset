@@ -260,7 +260,7 @@ Verdicts are layout issues that can be measured without reading the prose. They 
 
 Hints come from heuristics and can be false positives, because only the meaning of the prose shows whether the rule applies. A hint only sends a comment to the agent, which decides whether to change it. `check` only prints comments with verdicts, so a passing check stays quiet apart from its summary, even when hints remain after review. Use `list --suspicious` to inspect hints, which are marked with `(hint)` and never fail a check:
 
-- `orphan` means a line ends with the first word of a sentence, or the first of two lines ends with the start of a sentence that fits on the second without making it longer than the first
+- `orphan` means a line ends with the first word of a sentence, a line ends with the first two words of a sentence that the suggested rewrap moves to the next line, or the first of two lines ends with the start of a sentence that fits on the second without making it longer than the first
 - `split-parenthetical` means a line ends inside a parenthetical that the suggested rewrap keeps on one line within `maxWidth`
 - `em-dash` means the comment uses `—`
 - `dash` means the comment uses `–` or `--` between words
@@ -277,27 +277,17 @@ Hints are only checked in prose, never in code spans, code blocks, `@example`, o
 
 ### Text Kept as Written
 
-The tool rewraps prose paragraphs, list items, and JSDoc tag descriptions. It keeps everything else exactly as written. Those parts have no suggestion, and any fix to them is manual. A paragraph is a run of lines that ends at an empty line, a code fence, a JSDoc tag, or a list item. Which checks run in a paragraph that is kept depends on its syntax, never on what the text means:
+The tool rewraps prose paragraphs, list items, and JSDoc tag descriptions. Everything else is kept exactly as written and has no suggestion, so the agent or you have to fix it by hand:
 
-- Code gets no checks besides `banner`. This covers fenced and indented code blocks, the content of `@example`, `@default`, and `@defaultValue`, directives like `eslint-disable-next-line` or `@ts-expect-error` (only their exact names, so a line that starts with a package name like `eslint-config-prettier` stays prose), legal comments (`/*!`, `@license`, `@preserve`, and copyright notices, outside of code spans), and paragraphs that parse as JavaScript.
-- A line that only looks like code gets `overflow` but no hints, since the hints would point at the code. The whole paragraph is kept as written. This covers lines that end with `{`, start with `}`, `]`, or `)`, declare a `const`, `let`, or `var`, or are an `import` or `export` with `from` or braces, as well as lines that end with `;` and hold code characters or no spaces. Prose can look like that too, like a line that starts with `import them from`, so the width is still measured.
-- Layout syntax gets hints but no verdicts. It exempts the whole paragraph that holds one of these lines. That covers a line that starts with `|` and a Markdown table delimiter row like `--- | ---`, and any box-drawing character from `─` to `╿` (U+2500 to U+257F). It also covers a line that starts with four or more of the same character among `-=*#_~+/\` or ends with four or more among `-=*#_~` (but not a Markdown heading or a row of column underlines like `----  ----`), and aligned columns, meaning a gap of two or more spaces after which text continues at the same column on at least two lines.
-- Text laid out by hand gets hints and `overflow`. This covers a Markdown hard line break, meaning a line that ends with two or more spaces or with a backslash and is followed by another line of the same paragraph. The whole paragraph is kept byte for byte, trailing spaces included. Like in Markdown, a backslash that another backslash escapes, as in `\\`, and trailing spaces on the last line of a paragraph don't break a line, so they're rewrapped like any other prose. It also covers text that may be laid out by hand: a Markdown heading, link definition, HTML tag, or `>` quote at the start of a line (prose can start a line like `<T> is the type` or `# of retries` too), a line with two or more `|`, arrows like `-->`, `<--`, or `→`, rules like `---`, `+--`, or `====`, and two or more lines that each start with a term and a dash or colon, like `width - the maximum width`. Single-line block comments and block comments without a `*` on each line are checked the same way. So is prose that the tool can't rewrap without changing how it reads or adding a line that is too long. That is a paragraph whose rewrap would itself read as code or layout, like one that would end with `;` on the same line as a `>`. It is also a paragraph with a code span or `{...}` group that continues on the next line and doesn't fit on one line, which is what a stray backtick or brace looks like too. JSDoc tags whose content isn't a description, like `@typedef`, are never rewrapped but still have to fit the width.
+- Code gets no checks besides `banner`. This covers code blocks, `@example`, `@default`, and `@defaultValue`, tool directives like `eslint-disable-next-line` or `@ts-expect-error`, legal comments (`/*!`, `@license`, `@preserve`, and copyright notices), and paragraphs that parse as JavaScript.
+- Layout syntax gets hints but no verdicts, in the whole paragraph around it. This covers Markdown tables (a line that starts with `|`, or a delimiter row like `--- | ---`), box-drawing characters (U+2500 to U+257F), a line that starts with four or more of the same character among `-=*#_~+/\` or ends with four or more among `-=*#_~` (except Markdown headings and column underlines like `----  ----`), and aligned columns (a gap of two or more spaces after which text continues at the same column on at least two lines).
+- Text that only looks like code or hand layout keeps its line breaks but still gets `overflow`, since prose can look like that too. Lines that look like code, such as ones that end with `{` or `;` or start with `import`, get no hints. Hand layout, such as Markdown hard line breaks, headings, quotes, arrows, and `term - description` lists, still gets hints.
 
-A comment with an issue in a part that is kept is handed to the agent, which can fix the prose by hand. To keep a free-form drawing that is wider than the width, put it in a code fence, or add `comments-ignore` to the comment.
+To keep a drawing that is wider than the width, put it in a code fence or add `comments-ignore` to the comment.
 
 ### Configuration
 
-`width` is the preferred line length; `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults to a maximum of 120 columns (or `width`, if larger). A balanced parenthetical can extend a line past `width` when this keeps it together within `maxWidth`. In longer paragraphs, the wrapper balances all lines together and may split a parenthetical when that produces a better layout. A line never sticks out more than 15 columns past the line before it, like a full second line after a first line that the orphan rule keeps short, when up to two more lines avoid that. If the parenthetical cannot fit on a line of its own, it wraps normally. For example, `width: 80, maxWidth: 120` keeps `(JSDoc types, \`{@link ...}\`)` together in the example below:
-
-```ts
-/**
- * Splits prose into words, keeping backtick code spans and `{...}` groups (JSDoc types, `{@link ...}`)
- * intact so that they are never broken across lines.
- */
-```
-
-A comment that is one paragraph stays on one line up to `singleLineWidth` plus `tolerance`, since that always saves a line, and this allowance is capped by `maxWidth`. Code and documented layout regions retain their exemptions. An indivisible token in measured prose that exceeds `maxWidth` is reported as overflow; the wrapper preserves it, so resolving that case requires changing the maximum or the comment manually. `tolerance` lets prose lines go up to that many columns past `width` when that saves a line in a paragraph of three or more lines, and it never goes past `maxWidth`. It defaults to 0. When `maxWidth` is omitted, `tolerance` also sets a legacy maximum of `width + tolerance`. Direct `analyzeSource` callers can omit `maxWidth` to retain the legacy width/tolerance behavior.
+`width` is the preferred line length, and `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults `maxWidth` to 120, or to `width` if that is larger. The wrapper may go past `width`, up to `maxWidth`, to keep a parenthetical on one line. `tolerance` (default 0) lets lines in paragraphs of three or more lines go that many columns past `width` when that saves a line. A comment that is one paragraph stays on one line up to `singleLineWidth` plus `tolerance`, capped by `maxWidth`. A word or code span longer than `maxWidth` is never split and is reported as `overflow`.
 
 Like prettier, `comments` looks for a config file in the current directory and its parents, up to the repository root. The config can be a `comments.config.{ts,mts,js,mjs,cjs}`, `.commentsrc`, or `.commentsrc.json` file, or a `comments` key in `package.json`. All options are optional.
 
@@ -309,13 +299,10 @@ export default defineConfig({
   // defaults to prettier's printWidth, or 80
   width: 100,
   maxWidth: 120,
-  // prose lines may go this many columns past `width` when that saves a line
   tolerance: 0,
-  // a comment that is one paragraph stays on one line up to this length plus `tolerance`, and wraps to `width` beyond it
   singleLineWidth: 120,
   avoidSentenceOrphans: true,
-  // look for possible semicolons, em-dashes, dashes, label colons, emphasis, and banners as hints,
-  // which only decides what the agent sees, since its rules apply to every comment it gets
+  // report the style hints, like `em-dash` and `semicolon`
   style: true,
   ignore: ['src/generated/**'],
   agent: {
@@ -336,9 +323,7 @@ export default defineConfig({
 
 Most options also have a command line flag that overrides the config file for a single run. See `comments --help` for the full list.
 
-Comments are split across agents, because long prompts make an agent slower and less careful. All comments of a file go to the same agent, so two agents never edit the same file. Up to `maxAgents` agents run at once, and the rest wait their turn.
-
-In a terminal, `comments agent` shows a live table of the agents while they run. Afterwards, it lists the comments that still have issues and lets you open each agent's reply. `--no-interactive` skips that list, so the command shows the agents while they run and exits when they're done. Without a terminal, for example in a hook or in CI, it prints plain progress lines and only prints the replies of agents that failed. `--verbose` prints every reply in both cases.
+Comments are split across several agents, and all comments of a file go to the same agent. In a terminal, `comments agent` shows the agents while they run, then lists the comments that still have issues. `--no-interactive` skips that list, and `--verbose` prints every agent's reply.
 
 `agent.rules` points to a Markdown file that replaces the built-in formatting rules. `agent.command` runs any other agent CLI, like `['my-agent', '--prompt', '{prompt}']`. Without a `{prompt}` placeholder, the prompt goes to stdin.
 

@@ -2601,6 +2601,44 @@ describe('issue tiers', () => {
     });
   });
 
+  describe('a line that ends with the first two words of a sentence', () => {
+    const wide = { width: 100, maxWidth: 120, tolerance: 5 };
+
+    const stranded = jsdoc(
+      'Owns the open scaffolding shared by TCP, connected UDP, and unconnected UDP opens. It allocates',
+      'the channel id, parks a deferred in `pendingMap`, wires the abort listener, sends the frame',
+      '`buildFrame` produces, and unwinds the map entry when that send fails. The ordering is load',
+      'bearing. Every settlement path runs `settle` before the map entry changes so a racing abort',
+      'observes `settled` and backs off, and a cancelled open still sends a best-effort RST so the',
+      'relay releases the half-open channel.',
+    );
+
+    const broken = jsdoc(
+      'Owns the open scaffolding shared by TCP, connected UDP, and unconnected UDP opens.',
+      'It allocates the channel id, parks a deferred in `pendingMap`, wires the abort listener,',
+      'sends the frame `buildFrame` produces, and unwinds the map entry when that send fails.',
+      'The ordering is load bearing. Every settlement path runs `settle` before the map entry',
+      'changes so a racing abort observes `settled` and backs off, and a cancelled open still',
+      'sends a best-effort RST so the relay releases the half-open channel.',
+    );
+
+    it('rewraps to break after the sentence when the lines are only a little less even', () => {
+      expect(rewrapComment(commentOf(stranded, wide))).toBe(broken.trimEnd());
+      expect(isSuspicious(commentOf(broken, wide))).toBe(false);
+      expect(fix(broken, wide)).toBe(broken);
+    });
+
+    it('only hints, since a heuristic decides where a sentence ends', () => {
+      const comment = commentOf(stranded, wide);
+
+      expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`)).toEqual([
+        '2:orphan:hint',
+      ]);
+
+      expect(hasVerdictIssues(comment)).toBe(false);
+    });
+  });
+
   describe('a line that ends inside a parenthetical that the suggestion keeps whole', () => {
     const wide = { width: 100, maxWidth: 120, tolerance: 5 };
 

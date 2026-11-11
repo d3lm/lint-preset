@@ -2,8 +2,9 @@ export interface WrapOptions {
   /**
    * Sets whether a line may not end with the first word of a sentence, clause, or parenthetical,
    * like `This`, `the` after a comma, or `(the`. Such a word moves to the next line instead.
-   * It also sets whether the first of two lines ends with a sentence instead of the start of the
-   * next one, as long as the second line is then no longer than the first.
+   * It also sets whether a line avoids ending with the first two words of a sentence, and whether
+   * the first of two lines ends with a sentence instead of the start of the next one, as long as
+   * the second line is then no longer than the first.
    */
   readonly avoidSentenceOrphans: boolean;
 
@@ -411,6 +412,11 @@ export interface LayoutOptions extends WrapOptions {
    * Keeps the fewest lines even when a line sticks out far past the line before it.
    */
   readonly keepSteps?: boolean;
+
+  /**
+   * Lets a line end with the first few words of a sentence at no extra cost.
+   */
+  readonly ignoreSentenceStarts?: boolean;
 }
 
 /**
@@ -420,6 +426,14 @@ export interface LayoutOptions extends WrapOptions {
  */
 const FULLNESS_WEIGHT = 0.07;
 const PARENTHETICAL_SPLIT_WEIGHT = 2;
+
+/**
+ * Sets how much a line costs when it ends with the first `MAX_SENTENCE_START_WORDS` words or fewer
+ * of a sentence, like `It allocates` in `...UDP opens. It allocates`. It costs as much as a line
+ * that ends 5 columns before the others, so lines that are only a little less even win.
+ */
+const SENTENCE_START_COST = 25;
+const MAX_SENTENCE_START_WORDS = 2;
 
 /**
  * Sets how many columns a line may stick out past the line before it.
@@ -611,7 +625,7 @@ function balanceTokens(
   firstLimit: number,
   restLimit: number,
   count: number,
-  options: WrapOptions,
+  options: LayoutOptions,
   preferredLimit = restLimit,
   splitCosts: ReadonlyMap<number, number> = new Map(),
 ): string[][] | undefined {
@@ -634,7 +648,7 @@ function balanceTokens(
     afterOrphan: tokens.map((_, index) => {
       return options.avoidSentenceOrphans && index >= 2 && isOrphan(tokens[index - 2], tokens[index - 1]);
     }),
-    splitCosts,
+    splitCosts: withSentenceStartCosts(tokens, splitCosts, options),
   };
 
   const targets: number[] = [];
@@ -738,6 +752,36 @@ function splitCostsOf(tokens: readonly string[], limit: number): Map<number, num
   }
 
   return splitCosts;
+}
+
+/**
+ * Adds `SENTENCE_START_COST` to each line break that leaves the first words of a sentence at the
+ * end of the line before it. A break after a whole sentence of that few words costs nothing.
+ */
+function withSentenceStartCosts(
+  tokens: readonly string[],
+  splitCosts: ReadonlyMap<number, number>,
+  options: LayoutOptions,
+): ReadonlyMap<number, number> {
+  if (!options.avoidSentenceOrphans || options.ignoreSentenceStarts) {
+    return splitCosts;
+  }
+
+  const costs = new Map(splitCosts);
+
+  for (const [index, token] of tokens.entries()) {
+    if (!endsSentence(token)) {
+      continue;
+    }
+
+    const last = Math.min(index + 1 + MAX_SENTENCE_START_WORDS, tokens.length - 1);
+
+    for (let end = index + 2; end <= last && !endsSentence(tokens[end - 1]); end += 1) {
+      costs.set(end, (costs.get(end) ?? 0) + SENTENCE_START_COST);
+    }
+  }
+
+  return costs;
 }
 
 function hasParentheticals(tokens: readonly string[], restLimit: number, options: WrapOptions): boolean {

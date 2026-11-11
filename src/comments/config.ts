@@ -120,8 +120,10 @@ export interface CommentsConfig {
    * Keep the first word of a new sentence or parenthetical off the end of a line, e.g.
    * `...the module. This` or `...reflows (the` followed by the rest on the next line.
    * A paragraph of two lines also ends its first line with a sentence when the rest fits
-   * on the second line and is no longer than the first, instead of with the start of the
-   * next sentence, like `...the module. This one`. Defaults to `true`.
+   * on the second line and is no longer than the first, instead of with the start of
+   * the next sentence, like `...the module. This one`. Other lines avoid ending with the
+   * first two words of a sentence, like `...opens. It allocates`, unless that makes them
+   * much less even. Defaults to `true`.
    */
   readonly avoidSentenceOrphans?: boolean;
 
