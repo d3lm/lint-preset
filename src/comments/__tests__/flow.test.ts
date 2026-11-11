@@ -463,6 +463,27 @@ describe('DEFAULT_RULES', () => {
     expect(DEFAULT_RULES).toContain('Exact text and intentional layout win over the width');
     expect(DEFAULT_RULES).not.toMatch(/No line may exceed|leaves at least three words/);
   });
+
+  it('lets a long word that starts a sentence stay at the end of a line that would otherwise end early', () => {
+    const comments = analyzeSource(
+      [
+        '/**',
+        " * Check a path's accessibility relative to a dirfd like faccessat(2). FaccessatFlags.AT_EACCESS",
+        ' * checks against the effective ids instead of the real ids, and AtFlags.AT_SYMLINK_NOFOLLOW checks',
+        ' * the symlink itself.',
+        ' */',
+        '',
+      ].join('\n'),
+      'src/a.ts',
+      { width: 100, maxWidth: 120, tabWidth: 2, tolerance: 5, avoidSentenceOrphans: true, style: true },
+    );
+
+    const prompt = buildPrompt({ rules: DEFAULT_RULES, root: '/repo', comments });
+
+    expect(prompt).toContain('A long word, like an identifier or a code span, may stay at the end of a line');
+    expect(prompt).toContain('unless the Layout rules let a long word stay');
+    expect(prompt).toMatch(/- possible: line 2 may end with the start of .+ if it is a long word like an identifier/);
+  });
 });
 
 function file(name: string, count: number) {

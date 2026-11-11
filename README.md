@@ -294,7 +294,7 @@ A comment with an issue in a part that is kept is handed to the agent, which can
  */
 ```
 
-The separate `singleLineWidth` allowance is capped by `maxWidth`. Code and documented layout regions retain their exemptions. An indivisible token in measured prose that exceeds `maxWidth` is reported as overflow; the wrapper preserves it, so resolving that case requires changing the maximum or the comment manually. `tolerance` lets prose lines go up to that many columns past `width` when that saves a line in a paragraph of three or more lines, and it never goes past `maxWidth`. It defaults to 0. When `maxWidth` is omitted, `tolerance` also sets a legacy maximum of `width + tolerance`. Direct `analyzeSource` callers can omit `maxWidth` to retain the legacy width/tolerance behavior.
+A comment that is one paragraph stays on one line up to `singleLineWidth` plus `tolerance`, since that always saves a line, and this allowance is capped by `maxWidth`. Code and documented layout regions retain their exemptions. An indivisible token in measured prose that exceeds `maxWidth` is reported as overflow; the wrapper preserves it, so resolving that case requires changing the maximum or the comment manually. `tolerance` lets prose lines go up to that many columns past `width` when that saves a line in a paragraph of three or more lines, and it never goes past `maxWidth`. It defaults to 0. When `maxWidth` is omitted, `tolerance` also sets a legacy maximum of `width + tolerance`. Direct `analyzeSource` callers can omit `maxWidth` to retain the legacy width/tolerance behavior.
 
 Like prettier, `comments` looks for a config file in the current directory and its parents, up to the repository root. The config can be a `comments.config.{ts,mts,js,mjs,cjs}`, `.commentsrc`, or `.commentsrc.json` file, or a `comments` key in `package.json`. All options are optional.
 
@@ -308,7 +308,7 @@ export default defineConfig({
   maxWidth: 120,
   // prose lines may go this many columns past `width` when that saves a line
   tolerance: 0,
-  // a comment that is one paragraph stays on one line up to this length, and wraps to `width` beyond it
+  // a comment that is one paragraph stays on one line up to this length plus `tolerance`, and wraps to `width` beyond it
   singleLineWidth: 120,
   avoidSentenceOrphans: true,
   // look for possible semicolons, em-dashes, dashes, label colons, emphasis, and banners as hints,

@@ -984,6 +984,34 @@ describe('analyzeSource', () => {
 
       expect(isSuspicious(comment)).toBe(false);
     });
+
+    describe('tolerance', () => {
+      const line =
+        'Represents the second phase of a streamed index mount. {@link BrowserKernel.streamIndex} creates it.';
+      const wrapped = jsdoc(
+        'Represents the second phase of a streamed index mount.',
+        '{@link BrowserKernel.streamIndex} creates it.',
+      );
+      const settings = { width: 100, maxWidth: 120, singleLineWidth: 100, tolerance: 5 };
+
+      it('keeps a one-paragraph comment on one line up to the single-line width plus the tolerance', () => {
+        const source = jsdoc(line);
+        const [comment] = analyzeSource(source, 'file.ts', { ...options, ...settings });
+
+        expect(comment.lengths[1]).toBe(103);
+        expect(comment.paragraphs.flatMap((paragraph) => paragraph.issues)).toEqual([]);
+        expect(fix(source, settings)).toBe(source);
+        expect(fix(wrapped, settings)).toBe(source);
+      });
+
+      it('wraps to the width past the single-line width plus the tolerance', () => {
+        expect(fix(jsdoc(line), { ...settings, tolerance: 2 })).toBe(wrapped);
+      });
+
+      it('never passes the hard maximum, however large the tolerance', () => {
+        expect(fix(jsdoc(line), { ...settings, maxWidth: 102 })).toBe(wrapped);
+      });
+    });
   });
 
   it('lets a line overflow slightly when balancing cannot avoid a single word', () => {

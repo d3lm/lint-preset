@@ -40,8 +40,8 @@ export interface AnalyzeOptions extends WrapOptions {
 
   /**
    * Sets the maximum length of the line that holds a comment whose whole text is one
-   * prose paragraph. Such a comment stays on one line up to this length, even past
-   * `width`. It defaults to `width`.
+   * prose paragraph. Such a comment stays on one line up to this length plus `tolerance`,
+   * even past `width`, but never past `maxWidth`. It defaults to `width`.
    */
   readonly singleLineWidth?: number;
 
@@ -1185,10 +1185,12 @@ export function inspectSource(source: string, filename: string, options: Analyze
       Math.min(options.singleLineWidth ?? options.width, options.maxWidth ?? Infinity),
     );
 
+    // staying on one line always saves a line, so the tolerance applies on top of the single-line width
+    const singleLineLimit = Math.min(singleLineWidth + options.tolerance, options.maxWidth ?? Infinity);
+    const singleLine = shape.paragraphs.length === 1 ? singleLineLength(shape.paragraphs[0], options) : Infinity;
+
     const paragraphOptions =
-      shape.paragraphs.length === 1 && singleLineLength(shape.paragraphs[0], options) <= singleLineWidth
-        ? { ...options, width: singleLineWidth }
-        : options;
+      singleLine <= singleLineLimit ? { ...options, width: Math.max(singleLineWidth, singleLine) } : options;
 
     const lines = sourceLines.slice(shape.startLine, shape.endLine + 1);
 

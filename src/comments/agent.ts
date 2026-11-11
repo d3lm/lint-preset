@@ -25,7 +25,7 @@ When rules pull in different directions, the earlier one wins.
 ## Layout
 
 - After you finish, the tool rewraps prose paragraphs, list items, and JSDoc tag descriptions. The width is a preferred target. A parenthetical may extend a line up to the configured maximum so it stays together, and lines may go up to the configured tolerance past the width when that saves a line. In longer paragraphs, balanced lines take priority over keeping every parenthetical on one line. The tool also avoids short last lines where possible. Leave these line breaks to the tool, except for the sentence-orphan case below.
-- Don't end a line with the first word of a new sentence, clause, or parenthetical, like \`This\` after a period, \`the\` after a comma, or \`(the\`. Move it to the next line instead.
+- Don't end a line with the first word of a new sentence, clause, or parenthetical, like \`This\` after a period, \`the\` after a comma, or \`(the\`. Move it to the next line instead. A long word, like an identifier or a code span, may stay at the end of a line when moving it would leave that line far shorter than the lines around it. Then leave the line breaks as they are.
 - In a paragraph of two lines, the first line ends with a sentence whenever the rest fits on the second line and is no longer than the first. Don't end it with the start of the next sentence, like \`A wrap\` in \`...lay out differently. A wrap\`. Move those words to the second line instead.
 - A comment whose whole text is one paragraph stays on a single line when that line fits a separate, larger single-line width, even past the width. Only a longer comment wraps to the width.
 - Separate paragraphs with an empty comment line.
@@ -91,7 +91,7 @@ const ISSUE_DESCRIPTIONS: Record<Exclude<IssueType, 'overflow'>, string> = {
   widow: 'leaves fewer than three words on the last line of its paragraph',
   unbalanced: 'is in a paragraph whose lines are less even than the suggested rewrap',
   orphan:
-    'may end with the start of a new sentence, clause, or parenthetical, which belongs on the next line (leave it if the period or comma before it is part of an abbreviation, a name, or notation like `No. 3`)',
+    'may end with the start of a new sentence, clause, or parenthetical, which belongs on the next line (leave it if the period or comma before it is part of an abbreviation, a name, or notation like `No. 3`, or if it is a long word like an identifier and moving it would leave the line far shorter than the lines around it)',
   'em-dash':
     "may use an em-dash to join two thoughts (leave it if it's in a quotation, a title, or a string literal, or reads more clearly than the alternatives)",
   banner:
@@ -179,7 +179,7 @@ export function buildPrompt(options: {
     `Fix the formatting of the comments below, following the rules above. Paths are relative to ${options.root}. Widths include indentation and the comment prefix. The notes under each comment come from the tool's measurements, so never count columns yourself.`,
     '',
     '- After you finish, the tool rewraps every prose paragraph as described under Layout, so a layout note on a prose paragraph needs no change from you. Change only the wording there, and leave its line breaks to the tool.',
-    '- A note that a line may end with the start of a sentence, clause, or parenthetical is the exception. Only you can tell whether it does, so if it does, move those words to the start of the next line.',
+    '- A note that a line may end with the start of a sentence, clause, or parenthetical is the exception. Only you can tell whether it does, so if it does, move those words to the start of the next line, unless the Layout rules let a long word stay.',
     '- Parts kept as written are never rewrapped, and their notes say so. Fix those notes by hand, for example by breaking an overflowing prose line or by turning a long single-line comment into a multi-line one. Keep code, code spans, tables, box drawings, hard line breaks, and other intentional layout in them exactly as they are. If a note can only be fixed by changing those, leave it and say why in your reply.',
     `- Notes marked \`${HINT_MARKER}\` come from heuristics. If the rule doesn't actually apply, don't change anything for that note.`,
     '- Notes only point at places worth a look. Review each comment against the rules, and leave it as it is when it already follows them.',

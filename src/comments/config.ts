@@ -103,8 +103,9 @@ export interface CommentsConfig {
 
   /**
    * Sets the maximum length of the line that holds a comment whose whole text is one prose
-   * paragraph. Such a comment stays on one line up to this length, even past `width`, and is
-   * wrapped to `width` beyond it. Defaults to 120 and never exceeds `maxWidth`.
+   * paragraph. Such a comment stays on one line up to this length plus `tolerance`, even past
+   * `width`, and is wrapped to `width` beyond it. Defaults to 120, and the line never exceeds
+   * `maxWidth`.
    */
   readonly singleLineWidth?: number;
 
