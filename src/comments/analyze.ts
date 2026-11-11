@@ -14,6 +14,7 @@ import {
   findLineIssues,
   hasWidow,
   layoutTokens,
+  parentheticalAround,
   startsBlock,
   tokenize,
   type LayoutOptions,
@@ -63,6 +64,7 @@ const ISSUE_TIERS: Record<IssueType, IssueTier> = {
   widow: 'verdict',
   unbalanced: 'verdict',
   orphan: 'hint',
+  'split-parenthetical': 'hint',
   banner: 'hint',
   'em-dash': 'hint',
   semicolon: 'hint',
@@ -960,17 +962,68 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
     }
 
     /**
-     * Lines that only miss the break after a sentence are a hint, since a heuristic decides where
-     * a sentence ends.
+     * The agent may keep a word that a possible orphan is about where it is, so a layout that only
+     * differs from the suggestion by those words is no verdict. Anything else about it still is.
      */
-    if (
-      lineIssues.length === 0 &&
-      overflow.length === 0 &&
-      (currentLines.length === wrapped.length || options.maxWidth !== undefined)
-    ) {
-      const line = wrapped.findIndex((words, position) => words.join(' ') !== currentLines[position]?.join(' '));
+    const keepsOnlyOrphans = (): boolean => {
+      const free = settle({ ...layoutOptions, avoidSentenceOrphans: false });
 
-      lineIssues.push({ type: sameLayout(even, currentLines) ? 'orphan' : 'unbalanced', line: Math.max(line, 0) });
+      return !('wrapped' in free) || sameLayout(free.wrapped, currentLines);
+    };
+
+    /**
+     * Whether a parenthetical stays on one line is for the agent to decide, so a layout that
+     * matches the suggestion up to a line that ends inside a parenthetical that the suggestion
+     * keeps whole, and the rewrap of the rest after it, is no verdict.
+     */
+    const splitsOnlyParenthetical = (line: number): boolean => {
+      if (layoutOptions.parentheticalOverflow === undefined) {
+        return false;
+      }
+
+      const tokenCount = (lines: readonly (readonly string[])[]) => tokenize(lines.flat().join(' ')).length;
+      const end = tokenCount(currentLines.slice(0, line + 1));
+      const group = parentheticalAround(tokens, end, restLimit + layoutOptions.parentheticalOverflow);
+
+      if (!group) {
+        return false;
+      }
+
+      const keepsGroup = wrapped.every((_, position) => {
+        const breakAt = tokenCount(wrapped.slice(0, position + 1));
+
+        return breakAt <= group.start || breakAt >= group.end;
+      });
+
+      if (!keepsGroup) {
+        return false;
+      }
+
+      const restOptions = { ...layoutOptions, keepFirstLine: false };
+      const rest = bindLineStarts(tokens.slice(end), startsLine);
+      const restLines = layoutTokens(rest, restLimit, restLimit, restOptions);
+
+      return sameLayout(breakAfterSentence(restLines, restLimit, restLimit, restOptions), currentLines.slice(line + 1));
+    };
+
+    if (overflow.length === 0 && (currentLines.length === wrapped.length || options.maxWidth !== undefined)) {
+      const line = Math.max(
+        wrapped.findIndex((words, position) => words.join(' ') !== currentLines[position]?.join(' ')),
+        0,
+      );
+
+      // lines that only miss the break after a sentence are a hint, since a heuristic decides where a sentence ends
+      if (lineIssues.length === 0 && sameLayout(even, currentLines)) {
+        lineIssues.push({ type: 'orphan', line });
+      } else if (lineIssues.length === 0) {
+        lineIssues.push({ type: splitsOnlyParenthetical(line) ? 'split-parenthetical' : 'unbalanced', line });
+      } else if (
+        lineIssues.every((issue) => issue.type === 'orphan') &&
+        !sameLayout(even, currentLines) &&
+        !keepsOnlyOrphans()
+      ) {
+        lineIssues.push({ type: 'unbalanced', line });
+      }
     }
   }
 

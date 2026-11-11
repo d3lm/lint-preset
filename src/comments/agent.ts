@@ -92,6 +92,8 @@ const ISSUE_DESCRIPTIONS: Record<Exclude<IssueType, 'overflow'>, string> = {
   unbalanced: 'is in a paragraph whose lines are less even than the suggested rewrap',
   orphan:
     'may end with the start of a new sentence, clause, or parenthetical, which belongs on the next line (leave it if the period or comma before it is part of an abbreviation, a name, or notation like `No. 3`, or if it is a long word like an identifier and moving it would leave the line far shorter than the lines around it)',
+  'split-parenthetical':
+    'may split a parenthetical that the suggested rewrap keeps on one line, past the width but within the maximum (leave it if the split reads as well, like at a comma inside a list, and the line stays closer to the width)',
   'em-dash':
     "may use an em-dash to join two thoughts (leave it if it's in a quotation, a title, or a string literal, or reads more clearly than the alternatives)",
   banner:
@@ -180,6 +182,7 @@ export function buildPrompt(options: {
     '',
     '- After you finish, the tool rewraps every prose paragraph as described under Layout, so a layout note on a prose paragraph needs no change from you. Change only the wording there, and leave its line breaks to the tool.',
     '- A note that a line may end with the start of a sentence, clause, or parenthetical is the exception. Only you can tell whether it does, so if it does, move those words to the start of the next line, unless the Layout rules let a long word stay.',
+    '- A note that a line may split a parenthetical is the other exception. If the parenthetical reads better on one line, move the rest of it up to the end of that line yourself.',
     '- Parts kept as written are never rewrapped, and their notes say so. Fix those notes by hand, for example by breaking an overflowing prose line or by turning a long single-line comment into a multi-line one. Keep code, code spans, tables, box drawings, hard line breaks, and other intentional layout in them exactly as they are. If a note can only be fixed by changing those, leave it and say why in your reply.',
     `- Notes marked \`${HINT_MARKER}\` come from heuristics. If the rule doesn't actually apply, don't change anything for that note.`,
     '- Notes only point at places worth a look. Review each comment against the rules, and leave it as it is when it already follows them.',

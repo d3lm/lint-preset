@@ -19,7 +19,7 @@ export interface WrapOptions {
   readonly parentheticalOverflow?: number;
 }
 
-export type LineIssueType = 'overflow' | 'underfill' | 'orphan' | 'widow' | 'unbalanced';
+export type LineIssueType = 'overflow' | 'underfill' | 'orphan' | 'widow' | 'unbalanced' | 'split-parenthetical';
 
 export interface LineIssue {
   readonly type: LineIssueType;
@@ -204,7 +204,7 @@ function isParenthetical(token: string): boolean {
   return token.startsWith('(') && parentheticalEnd(token) !== -1;
 }
 
-interface ParentheticalGroup {
+export interface ParentheticalGroup {
   readonly start: number;
   readonly end: number;
 }
@@ -234,6 +234,18 @@ function parentheticalGroups(tokens: readonly string[], limit: number): Parenthe
   }
 
   return groups;
+}
+
+/**
+ * Returns the parenthetical that a line break before the token at `at` splits, of those that fit
+ * in `limit` columns.
+ */
+export function parentheticalAround(
+  tokens: readonly string[],
+  at: number,
+  limit: number,
+): ParentheticalGroup | undefined {
+  return parentheticalGroups(tokens, limit).find((group) => group.start < at && at < group.end);
 }
 
 export function bindParentheticals(tokens: readonly string[], limit: number): string[] {

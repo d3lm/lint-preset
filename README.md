@@ -261,6 +261,7 @@ Verdicts are layout issues that can be measured without reading the prose. They 
 Hints come from heuristics and can be false positives, because only the meaning of the prose shows whether the rule applies. A hint only sends a comment to the agent, which decides whether to change it. `check` only prints comments with verdicts, so a passing check stays quiet apart from its summary, even when hints remain after review. Use `list --suspicious` to inspect hints, which are marked with `(hint)` and never fail a check:
 
 - `orphan` means a line ends with the first word of a sentence, or the first of two lines ends with the start of a sentence that fits on the second without making it longer than the first
+- `split-parenthetical` means a line ends inside a parenthetical that the suggested rewrap keeps on one line within `maxWidth`
 - `em-dash` means the comment uses `—`
 - `dash` means the comment uses `–` or `--` between words
 - `semicolon` means the comment joins clauses with a semicolon
@@ -268,7 +269,9 @@ Hints come from heuristics and can be false positives, because only the meaning 
 - `emphasis` means the comment uses `*emphasis*` or `**bold**`
 - `banner` means the comment is a divider made of repeated characters
 
-A paragraph with an `orphan` hint is not reported as `unbalanced`, because the suggested rewrap moves the word that the hint is about, and the agent may rightly keep that word where it is. A line that ends early is still an `underfill`, whatever its last word is.
+A paragraph with an `orphan` hint is not reported as `unbalanced` when that word is all that sets it apart from the suggested rewrap, because the agent may rightly keep the word where it is. This holds when the paragraph matches the rewrap that allows orphans. A paragraph that differs from that rewrap too, like a line that ends with the hinted word while more words fit on it, is still `unbalanced`. A line that ends early is still an `underfill`, whatever its last word is.
+
+In the same way, a paragraph that splits a parenthetical is not reported as `unbalanced` when the split is all that sets it apart from the suggested rewrap, because the split can read as well and keep the line closer to `width`. This holds when the lines before the split match the rewrap and the lines after it match the rewrap of the text after the split. Otherwise the paragraph is still `unbalanced`.
 
 Hints are only checked in prose, never in code spans, code blocks, `@example`, or URLs. Rules that can't be measured, like writing complete sentences, are part of the agent's prompt (see `DEFAULT_RULES` in `src/comments/agent.ts`). The prompt treats the style rules as preferences, so the agent keeps punctuation that carries meaning or reads clearly, and never changes code, code spans, literals, patterns, or quotations.
 

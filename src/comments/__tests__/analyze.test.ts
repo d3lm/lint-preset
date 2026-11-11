@@ -532,7 +532,10 @@ describe('analyzeSource', () => {
 
     const [comment] = analyzeSource(source, 'file.ts', { ...options, width: 100 });
 
-    expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}`)).toEqual(['2:orphan']);
+    expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}`)).toEqual([
+      '2:orphan',
+      '2:unbalanced',
+    ]);
 
     expect(fix(source, { width: 100 })).toBe(stripIndent`
       /**
@@ -988,10 +991,12 @@ describe('analyzeSource', () => {
     describe('tolerance', () => {
       const line =
         'Represents the second phase of a streamed index mount. {@link BrowserKernel.streamIndex} creates it.';
+
       const wrapped = jsdoc(
         'Represents the second phase of a streamed index mount.',
         '{@link BrowserKernel.streamIndex} creates it.',
       );
+
       const settings = { width: 100, maxWidth: 120, singleLineWidth: 100, tolerance: 5 };
 
       it('keeps a one-paragraph comment on one line up to the single-line width plus the tolerance', () => {
@@ -1742,7 +1747,7 @@ describe('analyzeSource false positives', () => {
   }
 
   function styleIssuesOf(source: string): string[] {
-    const layout = new Set(['overflow', 'underfill', 'orphan', 'widow', 'unbalanced']);
+    const layout = new Set(['overflow', 'underfill', 'orphan', 'widow', 'unbalanced', 'split-parenthetical']);
 
     return issuesOf(source).filter((issue) => !layout.has(issue.split(':')[1]));
   }
@@ -2015,7 +2020,7 @@ function textLength(line: string): number {
 }
 
 describe('rewrap invariants', () => {
-  const LAYOUT = new Set(['overflow', 'underfill', 'widow', 'unbalanced', 'orphan']);
+  const LAYOUT = new Set(['overflow', 'underfill', 'widow', 'unbalanced', 'orphan', 'split-parenthetical']);
 
   function layoutIssues(source: string, overrides: Partial<AnalyzeOptions>): string[] {
     return analyzeSource(source, 'file.ts', { ...options, ...overrides }).flatMap((comment) =>
@@ -2565,6 +2570,92 @@ describe('issue tiers', () => {
 
     it('only hints when no more words fit on the line', () => {
       expect(issuesOf(jsdoc('Please read item No. 3', 'for more details.'), { width: 25 })).toEqual(['2:orphan:hint']);
+    });
+
+    const wide = { width: 100, maxWidth: 120, tolerance: 5 };
+
+    it('reports a paragraph as unbalanced when more than the possible orphan sets it apart from the suggestion', () => {
+      const source = jsdoc(
+        'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes, and',
+        'the 20-byte IP header plus the 8-byte UDP header leave 65507 bytes of payload.',
+      );
+
+      expect(issuesOf(source, wide)).toEqual(['2:orphan:hint', '2:unbalanced:verdict']);
+
+      expect(rewrapComment(commentOf(source, wide))).toBe(
+        jsdoc(
+          'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes, and the 20-byte IP header plus',
+          'the 8-byte UDP header leave 65507 bytes of payload.',
+        ).trimEnd(),
+      );
+    });
+
+    it('only hints when the possible orphan is all that sets a paragraph apart from the suggestion', () => {
+      const source = jsdoc(
+        "Check a path's accessibility relative to a dirfd like faccessat(2). FaccessatFlags.AT_EACCESS",
+        'checks against the effective ids instead of the real ids, and AtFlags.AT_SYMLINK_NOFOLLOW checks',
+        'the symlink itself.',
+      );
+
+      expect(issuesOf(source, wide)).toEqual(['2:orphan:hint']);
+    });
+  });
+
+  describe('a line that ends inside a parenthetical that the suggestion keeps whole', () => {
+    const wide = { width: 100, maxWidth: 120, tolerance: 5 };
+
+    const head =
+      'The backend is a deliberate SSRF surface. The destination policy (private-range denial, port denylists,';
+
+    const issuesOf = (source: string, overrides: Partial<AnalyzeOptions> = wide): string[] => {
+      const [paragraph] = commentOf(source, overrides).paragraphs;
+
+      return paragraph.issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`);
+    };
+
+    it('only hints when the split is all that sets the paragraph apart from the suggestion', () => {
+      const source = jsdoc(head, 'auth) belongs here or in the relay behind it, never in the kernel.');
+      const comment = commentOf(source, wide);
+
+      expect(issuesOf(source)).toEqual(['2:split-parenthetical:hint']);
+      expect(hasVerdictIssues(comment)).toBe(false);
+
+      expect(rewrapComment(comment)).toBe(
+        jsdoc(
+          'The backend is a deliberate SSRF surface. The destination policy (private-range denial, port denylists, auth)',
+          'belongs here or in the relay behind it, never in the kernel.',
+        ).trimEnd(),
+      );
+    });
+
+    it('only hints when the lines after the split match the rewrap of the rest', () => {
+      const source = jsdoc(
+        head,
+        'auth) belongs here or in the relay behind it, never in the kernel. It also covers every relay',
+        'that forwards traffic for a guest, so a relay can never reach a private address on its own.',
+      );
+
+      expect(issuesOf(source)).toEqual(['2:split-parenthetical:hint']);
+    });
+
+    it('reports a paragraph as unbalanced when more than the split sets it apart from the suggestion', () => {
+      const source = jsdoc(
+        head,
+        'auth) belongs here or in the relay behind it, never in the kernel. It also covers',
+        'every relay that forwards traffic for a guest, so a relay can never reach a private address on its own.',
+      );
+
+      expect(issuesOf(source)).toEqual(['2:unbalanced:verdict']);
+    });
+
+    it('only applies with a maximum, since parentheticals only stay together within one', () => {
+      const source = jsdoc(
+        'Splits prose into words, keeping backtick code spans and `{...}` groups (JSDoc types,',
+        '`{@link ...}`) intact so that they are never broken across lines.',
+      );
+
+      expect(issuesOf(source, { width: 80, maxWidth: 120 })).toEqual(['2:split-parenthetical:hint']);
+      expect(issuesOf(source, { width: 80 })).toEqual(['2:overflow:verdict']);
     });
   });
 
