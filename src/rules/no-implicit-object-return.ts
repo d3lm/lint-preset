@@ -21,7 +21,6 @@ const rule: Rule.RuleModule = {
       ArrowFunctionExpression(node) {
         const body = node.body;
 
-        // only concise bodies that resolve straight to an object literal
         if (!node.expression || body.type !== 'ObjectExpression') {
           return;
         }

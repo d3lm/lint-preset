@@ -12,25 +12,14 @@ const tester = new RuleTester({
 
 tester.run('no-member-access-on-ternary', rule, {
   valid: [
-    // the ternary is named first, then used
     'const ledger = applied ? acked : refused; ledger.push(message);',
-
-    // a ternary passed as an argument or returned as a value is fine
     'ledger.push(applied ? acked : refused);',
     'const f = () => (applied ? acked : refused);',
     'function f() { return applied ? acked : refused; }',
-
-    // member access inside a branch belongs to the branch, not the ternary
     'const x = applied ? acked.push(message) : refused.push(message);',
     'const x = runs === 1 ? label.singular.toLowerCase() : label.plural;',
-
-    // member access in the condition is fine
     'const x = list.length > 0 ? first : second;',
-
-    // calling the ternary itself is not member access
     '(applied ? accept : reject)(message);',
-
-    // other parenthesized receivers are out of scope
     '(a || b).push(message);',
     '(a ?? b).push(message);',
     '(await load()).push(message);',

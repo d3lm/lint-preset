@@ -1,19 +1,12 @@
 import type { Rule } from 'eslint';
 
 function isAlwaysPadded(node: Rule.Node) {
-  /**
-   * Class methods and static blocks always get blank lines between
-   * siblings, even when single-line, so they never feel crammed together.
-   */
   return node.type === 'MethodDefinition' || node.type === 'StaticBlock';
 }
 
 function isImportOrExport(node: Rule.Node) {
   /**
-   * Imports and re-exports are grouped together with no blank lines between
-   * them, so this rule ignores them entirely, both as a subject and as a
-   * neighbor. Declared exports (export const/function/class) still pad like
-   * regular code, since they contain real multiline bodies.
+   * Imports and re-exports are grouped together with no blank lines between them.
    */
   if (node.type === 'ImportDeclaration' || node.type === 'ExportAllDeclaration') {
     return true;

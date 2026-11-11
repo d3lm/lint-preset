@@ -11,13 +11,11 @@ import {
 } from './helpers/effective-ruleset.js';
 
 /**
- * Pins the combined effective ruleset (Oxlint-enabled rules + rules left
- * active in the resolved ESLint config) against a committed baseline that
- * was captured before rules were migrated from ESLint to Oxlint.
+ * Pins the combined effective ruleset (Oxlint-enabled rules + rules left active in the resolved ESLint config)
+ * against a committed baseline that was captured before rules were migrated from ESLint to Oxlint.
  *
- * Moving a rule between engines must not change this combined map, so the
- * test proves the migration kept behavior identical: same rules, same
- * severities, same options — just served by a different engine.
+ * Moving a rule between engines must not change this combined map, so the test proves the migration
+ * kept behavior identical (same rules, same severities, same options, just served by a different engine).
  *
  * Regenerate the baseline (only when intentionally changing the rule set):
  *

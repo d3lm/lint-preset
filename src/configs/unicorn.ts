@@ -1,23 +1,21 @@
 import type { Linter } from 'eslint';
 
 /**
- * Mirror of `eslint-plugin-unicorn`'s recommended config, split by runtime.
+ * Mirrors `eslint-plugin-unicorn`'s recommended config, split by runtime.
  *
- * Oxlint natively implements most unicorn rules, so we enable those under the
- * canonical `unicorn/` prefix (fast, Rust). Rules oxlint hasn't ported run
- * through the original JS plugin, aliased as `unicornx` in `jsPlugins` (see
- * `src/oxlint.ts`), because oxlint's built-in plugin owns the `unicorn/`
- * namespace.
+ * Oxlint natively implements most unicorn rules, so we enable those under the canonical
+ * `unicorn/` prefix (fast, Rust). Rules oxlint hasn't ported run through the original JS
+ * plugin, aliased as `unicornx` in `jsPlugins` (see `src/oxlint.ts`), because oxlint's
+ * built-in plugin owns the `unicorn/` namespace.
  *
- * `unicorn/name-replacements` is also not ported. It lives in `javascript.ts`
- * because it takes user-configurable options.
+ * `unicorn/name-replacements` is also not ported. It lives in `javascript.ts` because it
+ * takes user-configurable options.
  */
 
 /**
- * Unicorn recommended rules natively implemented by Oxlint, grouped by the
- * oxlint category they belong to. Only the correctness group is enabled by
- * oxlint's defaults (as `warn`); everything is set explicitly to `error` to
- * match the recommended config.
+ * Lists the Unicorn recommended rules natively implemented by Oxlint, grouped by the oxlint category
+ * they belong to. Only the correctness group is enabled by oxlint's defaults (as `warn`). Everything is
+ * set explicitly to `error` to match the recommended config.
  */
 export const unicornRulesOxlint: Linter.RulesRecord = {
   // correctness
@@ -151,8 +149,8 @@ export const unicornRulesOxlint: Linter.RulesRecord = {
 };
 
 /**
- * Unicorn recommended rules that Oxlint hasn't ported. They run inside Oxlint
- * through the original JS plugin under the `unicornx` alias.
+ * Lists the Unicorn recommended rules that Oxlint hasn't ported. They run inside Oxlint through the
+ * original JS plugin under the `unicornx` alias.
  */
 export const unicornRulesJsPlugin: Linter.RulesRecord = {
   'unicornx/isolated-functions': 'error',
@@ -167,23 +165,22 @@ export const unicornRulesJsPlugin: Linter.RulesRecord = {
   'unicornx/template-indent': 'error',
 
   /**
-   * Native port exists but only in oxlint's nursery category, which can't be
-   * enabled from config, so we run the JS original instead.
+   * Native port exists but only in oxlint's nursery category, which can't be enabled from config,
+   * so we run the JS original instead.
    */
   'unicornx/no-useless-iterator-to-array': 'error',
 
   /**
-   * Oxlint's port hardcodes uppercase hexadecimal digits, which fights
-   * Prettier's lowercase formatting, so we run the JS original with the
-   * lowercase option instead.
+   * Oxlint's port hardcodes uppercase hexadecimal digits, which fights Prettier's lowercase
+   * formatting, so we run the JS original with the lowercase option instead.
    */
   'unicornx/number-literal-case': ['error', { hexadecimalValue: 'lowercase' }],
 };
 
 /**
- * Unicorn recommended rules that can't run inside Oxlint's JS-plugin host yet
- * because the compat layer is missing ESLint APIs (e.g.
- * `sourceCode.getDisableDirectives`). ESLint picks them up after Oxlint runs.
+ * Lists the Unicorn recommended rules that can't run inside Oxlint's JS-plugin host yet because the
+ * compat layer is missing ESLint APIs (e.g. `sourceCode.getDisableDirectives`). ESLint picks them up
+ * after Oxlint runs.
  */
 export const unicornRulesEslint: Linter.RulesRecord = {
   'unicorn/expiring-todo-comments': 'error',

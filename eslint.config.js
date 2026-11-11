@@ -5,6 +5,9 @@ export default eslintConfig({
   tsconfigRootDir: import.meta.dirname,
   oxlintConfig,
 
-  // intentional rule violations used by the rule-ownership test
-  ignores: ['src/configs/__tests__/fixtures/violations/**'],
+  /**
+   * These paths hold intentional rule violations used by the rule-ownership test, and source
+   * snapshots that eval runs write verbatim.
+   */
+  ignores: ['src/configs/__tests__/fixtures/violations/**', 'evals/runs/**'],
 });

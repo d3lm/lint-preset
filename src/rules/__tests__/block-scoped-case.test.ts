@@ -73,7 +73,6 @@ tester.run('block-scoped-case', rule, {
       errors: [{ messageId: 'missingBlock' }],
     },
     {
-      // entire body on the colon line must be preserved (not wiped to an empty block)
       code: stripIndent`
         switch (x) {
           case 1: console.log(1); break;
@@ -89,7 +88,6 @@ tester.run('block-scoped-case', rule, {
       errors: [{ messageId: 'missingBlock' }],
     },
     {
-      // first statement shares the colon line; following statements must be kept
       code: stripIndent`
         switch (x) {
           case 1: console.log(1);
@@ -107,7 +105,6 @@ tester.run('block-scoped-case', rule, {
       errors: [{ messageId: 'missingBlock' }],
     },
     {
-      // nested indentation inside the body is preserved
       code: stripIndent`
         switch (x) {
           case 1:

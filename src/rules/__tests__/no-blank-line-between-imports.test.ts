@@ -63,7 +63,6 @@ tester.run('no-blank-line-between-imports', rule, {
       `,
     },
     {
-      // non-import statements between imports are out of scope
       code: stripIndent`
         import foo from 'foo';
 

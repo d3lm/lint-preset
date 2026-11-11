@@ -44,10 +44,6 @@ const rule: Rule.RuleModule = {
 
     const groupPatterns = (options.groups ?? []).map((pattern) => new RegExp(pattern, 'u'));
 
-    /**
-     * Imports matching none of the patterns share the implicit `-1` group, so
-     * a blank line is only allowed where the group changes.
-     */
     function getGroup(source: unknown): number {
       return groupPatterns.findIndex((pattern) => pattern.test(String(source)));
     }

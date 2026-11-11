@@ -41,19 +41,17 @@ interface NamingConventionFormatOptions {
 }
 
 /**
- * Type-aware typescript-eslint rules that Oxlint executes natively through
- * tsgolint (`options.typeAware`). They mirror what typescript-eslint's
- * `strictTypeChecked` + `stylisticTypeChecked` presets enabled when these
- * rules still ran under ESLint — same severities, same options — so moving
- * them here changed which engine serves them, not the behavior.
+ * Lists the type-aware typescript-eslint rules that Oxlint executes natively through tsgolint (`options.typeAware`).
+ * They mirror what typescript-eslint's `strictTypeChecked` + `stylisticTypeChecked` presets enabled when these rules
+ * still ran under ESLint (same severities, same options), so moving them here changed which engine serves them,
+ * not the behavior.
  *
  * Type-aware rules in oxlint's `correctness` category (e.g. `await-thenable`,
- * `unbound-method`) are not listed: they already run via the default
- * category, as `warn`, matching the pre-migration state.
+ * `unbound-method`) are not listed. They already run via the default category,
+ * as `warn`, matching the pre-migration state.
  *
- * `typescript/naming-convention` is one of the two typescript-eslint
- * type-aware rules tsgolint doesn't implement; it stays in ESLint
- * (see {@link tsRulesEslint}).
+ * `typescript/naming-convention` is one of the two typescript-eslint type-aware rules tsgolint
+ * doesn't implement. It stays in ESLint (see {@link tsRulesEslint}).
  */
 export const tsTypeAwareRulesOxlint: Linter.RulesRecord = {
   'typescript/no-confusing-void-expression': 'error',
@@ -101,11 +99,10 @@ export const tsTypeAwareRulesOxlint: Linter.RulesRecord = {
 };
 
 /**
- * Syntax-only rules that Oxlint ports natively and that used to reach ESLint
- * through typescript-eslint's presets: the `strictTypeChecked` /
- * `stylisticTypeChecked` rules that don't need type information, plus the
- * ESLint-core rules typescript-eslint's `eslintRecommended` config raises for
- * TypeScript files (hence the `eslint/` prefix and the TS-files-only scope).
+ * Lists the syntax-only rules that Oxlint ports natively and that used to reach ESLint through
+ * typescript-eslint's presets. They are the `strictTypeChecked` and `stylisticTypeChecked` rules that
+ * don't need type information, plus the ESLint-core rules that typescript-eslint's `eslintRecommended`
+ * config raises for TypeScript files (hence the `eslint/` prefix and the TS-files-only scope).
  */
 export const tsSyntaxRulesOxlint: Linter.RulesRecord = {
   'typescript/adjacent-overload-signatures': 'error',
@@ -138,10 +135,6 @@ export const tsSyntaxRulesOxlint: Linter.RulesRecord = {
   'eslint/prefer-spread': 'error',
 };
 
-/**
- * TypeScript rules that run under Oxlint, including the type-aware set
- * executed through tsgolint.
- */
 export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.RulesRecord {
   return {
     ...jsRulesOxlint(options),
@@ -149,11 +142,6 @@ export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.Rules
     ...tsTypeAwareRulesOxlint,
     ...tsSyntaxRulesOxlint,
 
-    /**
-     * Oxlint exposes typescript-eslint rules under its own `typescript/`
-     * namespace, so rule ids are prefixed `typescript/` rather than
-     * `@typescript-eslint/`.
-     */
     'typescript/no-unused-vars': [
       'error',
       {
@@ -187,11 +175,9 @@ export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.Rules
 }
 
 /**
- * TypeScript rules served by ESLint.
- *
- * Only rules Oxlint can't run remain here: `naming-convention` is one of the
- * two typescript-eslint type-aware rules tsgolint doesn't implement, and
- * `explicit-member-accessibility` has no Oxlint port at all.
+ * Only rules Oxlint can't run remain here. `naming-convention` is one of the two typescript-eslint
+ * type-aware rules tsgolint doesn't implement, and `explicit-member-accessibility` has no Oxlint
+ * port at all.
  */
 export function tsRulesEslint(options: TypeScriptRuleOptions = {}): Linter.RulesRecord {
   return {
@@ -215,11 +201,6 @@ export function tsRulesEslint(options: TypeScriptRuleOptions = {}): Linter.Rules
   };
 }
 
-/**
- * ESLint-namespaced variant of the naming-convention rule. Keeps the same
- * filter / selector shape as {@link getNamingConventionRule}, only swapping
- * the rule id so it lines up with `@typescript-eslint/eslint-plugin`.
- */
 export function getESLintNamingConventionRule(
   extensions?: TypeScriptRuleOptions['namingConvention'],
 ): Linter.RulesRecord {

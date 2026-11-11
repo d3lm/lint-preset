@@ -71,9 +71,9 @@ export const paddingLineEntries = [
     next: ['case', 'default'],
   },
   {
-    blankLine: 'any',
+    blankLine: 'always',
     prev: '*',
-    next: 'break',
+    next: ['break', 'continue'],
   },
   {
     blankLine: 'always',
@@ -97,9 +97,8 @@ export const paddingLineEntries = [
     },
   },
   /**
-   * Imports form a block: padded from anything that isn't an import, but
-   * consecutive imports can sit together. The same-type rule comes last so it
-   * wins over the surrounding `*` rules.
+   * The rule applies the last entry that matches a statement pair, so the import-to-import entry
+   * must come after the surrounding `*` entries.
    */
   {
     blankLine: 'always',
@@ -117,9 +116,8 @@ export const paddingLineEntries = [
     next: 'import',
   },
   /**
-   * Exports form a block: padded from anything that isn't an export, but
-   * consecutive exports can sit together. The same-type rule comes last so it
-   * wins over the surrounding `*` rules.
+   * The rule applies the last entry that matches a statement pair, so the export-to-export entry
+   * must come after the surrounding `*` entries.
    */
   {
     blankLine: 'always',
@@ -138,7 +136,7 @@ export const paddingLineEntries = [
   },
 ];
 
-export const jsdocTagLineOptions = ['always', { count: 1, startLines: 1, applyToEndTag: false }];
+export const jsdocTagLineOptions = ['never', { startLines: 1, applyToEndTag: false }];
 
 export interface JavaScriptRuleOptions {
   preventAbbreviations?: {
@@ -149,9 +147,6 @@ export interface JavaScriptRuleOptions {
   };
 }
 
-/**
- * Non type-aware rules that run under Oxlint.
- */
 export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.RulesRecord {
   const { preventAbbreviations: preventAbbreviationsOptions } = options;
 
@@ -185,9 +180,8 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     '@stylistic/no-trailing-spaces': 'error',
 
     /**
-     * Indentation is owned by Prettier. Oxlint's @stylistic/indent port
-     * diverges from eslint-stylistic on edge cases (e.g., multiline object
-     * args inside ternaries), so we leave the rule off.
+     * Indentation is owned by Prettier. Oxlint's @stylistic/indent port diverges from eslint-stylistic on edge cases
+     * (e.g., multiline object args inside ternaries), so we leave the rule off.
      */
     '@stylistic/indent': 'off',
     '@stylistic/no-multiple-empty-lines': ['error', { max: 1 }],
@@ -221,14 +215,13 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
       },
     ],
 
-    // unicorn recommended, split between native oxlint ports and JS originals
     ...unicornRulesOxlint,
     ...unicornRulesJsPlugin,
 
     /**
-     * Oxlint's built-in `unicorn` / `jsdoc` plugins don't implement these,
-     * so we wire the original JS plugins under aliased names (see jsPlugins
-     * in `src/oxlint.ts`). Rule IDs use the alias, not the canonical prefix.
+     * Oxlint's built-in `unicorn` / `jsdoc` plugins don't implement these, so we wire the original JS
+     * plugins under aliased names (see jsPlugins in `src/oxlint.ts`). Rule IDs use the alias instead
+     * of the canonical prefix.
      */
     'unicornx/name-replacements': [
       'error',
@@ -243,11 +236,10 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
 }
 
 /**
- * Rules that can't run under Oxlint. ESLint-core rules that Oxlint hasn't
- * implemented (`prefer-arrow-callback`) or only ships in its nursery category
- * (`no-useless-assignment`), and that aren't exposed by any plugin we can
- * alias into oxlint's `jsPlugins` (the `@eslint/js` package only ships configs,
- * not a raw `rules` object). ESLint picks them up after Oxlint runs.
+ * These rules can't run under Oxlint. They are ESLint-core rules that Oxlint hasn't implemented
+ * (`prefer-arrow-callback`) or only ships in its nursery category (`no-useless-assignment`), and no
+ * plugin we can alias into oxlint's `jsPlugins` exposes them, because the `@eslint/js` package only
+ * ships configs, not a raw `rules` object. ESLint picks them up after Oxlint runs.
  */
 export function jsRulesEslint(_options: JavaScriptRuleOptions = {}): Linter.RulesRecord {
   return {

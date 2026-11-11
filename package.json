@@ -33,7 +33,15 @@
       "types": "./dist/rules.d.ts",
       "import": "./dist/rules.js",
       "require": "./dist/rules.cjs"
+    },
+    "./comments": {
+      "types": "./dist/comments.d.ts",
+      "import": "./dist/comments.js",
+      "require": "./dist/comments.cjs"
     }
+  },
+  "bin": {
+    "comments": "./dist/bin/comments.js"
   },
   "files": [
     "dist"
@@ -87,5 +95,9 @@
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.32.1",
     "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "oxc-parser": "^0.158.0"
   }
 }

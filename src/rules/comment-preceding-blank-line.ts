@@ -114,8 +114,8 @@ const rule: Rule.RuleModule = {
     }
 
     /**
-     * A comment before the leading `|` or `&` of a multiline union or intersection
-     * type describes its first member, so it's treated like a comment at block start.
+     * A comment before the leading `|` or `&` of a multiline union or intersection type describes
+     * its first member, so it's treated like a comment at block start.
      */
     function isBeforeFirstTypeConstituent(comment: Comment): boolean {
       const tokenAfter = sourceCode.getTokenAfter(comment as unknown as Rule.Node);
@@ -140,8 +140,8 @@ const rule: Rule.RuleModule = {
     }
 
     /**
-     * Imports must form a single block (see `no-blank-line-between-imports`),
-     * so a comment between two imports can't be preceded by a blank line.
+     * Imports must form a single block (see `no-blank-line-between-imports`), so a comment between
+     * two imports can't be preceded by a blank line.
      */
     function isBetweenImports(comment: Comment): boolean {
       const tokenBefore = sourceCode.getTokenBefore(comment as unknown as Rule.Node);
@@ -179,10 +179,6 @@ const rule: Rule.RuleModule = {
       );
     }
 
-    /**
-     * Stacked multi-line block comments must always be separated by a blank line,
-     * even where the exemptions would let a comment hug the preceding line.
-     */
     function followsMultiLineBlock(comment: Comment): boolean {
       if (!isMultiLineBlock(comment)) {
         return false;
@@ -230,10 +226,6 @@ const rule: Rule.RuleModule = {
             continue;
           }
 
-          /**
-           * Insert the blank line before the comment's leading indentation so the
-           * comment keeps its position instead of being dedented.
-           */
           const commentStart = comment.range[0];
           const lineStart = sourceCode.getText().lastIndexOf('\n', commentStart - 1) + 1;
 

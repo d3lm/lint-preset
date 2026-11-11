@@ -25,7 +25,6 @@ const rule: Rule.RuleModule = {
           return;
         }
 
-        // already wrapped in a single BlockStatement
         if (consequent.length === 1 && consequent[0].type === 'BlockStatement') {
           return;
         }
@@ -63,18 +62,11 @@ const rule: Rule.RuleModule = {
             const bodyText = text.slice(colonToken.range[1], lastToken.range[1]);
 
             const lines = bodyText.split('\n');
-
-            /**
-             * Lines after the colon line keep their relative nesting; we only shift
-             * them so the shallowest one lands at the desired body indent.
-             */
             const restLines = lines.slice(1);
             const restIndents = restLines.filter((line) => line.trim() !== '').map((line) => leadingWhitespace(line));
             const indentDelta = restIndents.length > 0 ? bodyIndent.length - Math.min(...restIndents) : 0;
 
             const bodyLines: string[] = [];
-
-            // code sharing the colon line (e.g. `case 1: foo()`) must be preserved
             const firstLine = lines[0].trim();
 
             if (firstLine) {
@@ -84,6 +76,7 @@ const rule: Rule.RuleModule = {
             for (const line of restLines) {
               if (line.trim() === '') {
                 bodyLines.push('');
+
                 continue;
               }
 

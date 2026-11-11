@@ -16,11 +16,8 @@ const tester = new RuleTester({
 
 tester.run('no-implicit-object-return', rule, {
   valid: [
-    // block body with an explicit return is exactly what we want to allow
     'const f = () => { return {}; };',
     'const f = () => { return { a: 1 }; };',
-
-    // non-object concise bodies stay flexible
     'const f = () => foo();',
     'const f = () => 42;',
     'const f = (x) => x;',
@@ -29,10 +26,7 @@ tester.run('no-implicit-object-return', rule, {
     // a block whose first statement opens with `{` is not a concise object body
     'const f = () => { ({ a: 1 }); };',
 
-    // the object literal is nested inside the body, not the body itself
     'const f = (x) => (x ? foo() : { a: 1 });',
-
-    // regular functions can never use a concise body
     'const f = function () { return {}; };',
 
     // JSX concise returns are a different node (JSXElement / JSXFragment), not objects

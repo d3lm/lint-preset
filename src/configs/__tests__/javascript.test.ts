@@ -70,6 +70,35 @@ tester.run(
         `,
         options: paddingLineEntries,
       },
+      {
+        code: stripIndent`
+          for (const item of items) {
+            if (item.skip) {
+              continue;
+            }
+
+            if (item.last) {
+              track(item);
+
+              break;
+            }
+          }
+        `,
+        options: paddingLineEntries,
+      },
+      {
+        code: stripIndent`
+          switch (kind) {
+            case 'first':
+              break;
+            case 'second':
+              track(kind);
+
+              break;
+          }
+        `,
+        options: paddingLineEntries,
+      },
     ],
     invalid: [
       {
@@ -152,6 +181,42 @@ tester.run(
         options: paddingLineEntries,
         errors: [{ messageId: 'expectedBlankLine' }],
       },
+      {
+        code: stripIndent`
+          for (const item of items) {
+            index = item.last;
+            continue;
+          }
+        `,
+        output: stripIndent`
+          for (const item of items) {
+            index = item.last;
+
+            continue;
+          }
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'expectedBlankLine' }],
+      },
+      {
+        code: stripIndent`
+          switch (kind) {
+            case 'first':
+              track(kind);
+              break;
+          }
+        `,
+        output: stripIndent`
+          switch (kind) {
+            case 'first':
+              track(kind);
+
+              break;
+          }
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'expectedBlankLine' }],
+      },
     ],
   },
 );
@@ -203,19 +268,45 @@ tester.run('javascript jsdoc tag-lines config', tagLinesRule, {
       `,
       options: jsdocTagLineOptions,
     },
+    {
+      code: stripIndent`
+        /**
+         * Copies a file to a new location.
+         *
+         * @param source - The file to copy.
+         * @param overwrite - Whether an existing file at the destination is replaced, which is off by default
+         * so that a typo never destroys data.
+         * @param foobar - Some other param.
+         *
+         * Some text here.
+         */
+        function copy(source, overwrite, foobar) {
+          return [source, overwrite, foobar];
+        }
+      `,
+      options: jsdocTagLineOptions,
+    },
+    {
+      code: stripIndent`
+        /**
+         * Runs the check.
+         *
+         * @example
+         * check();
+         *
+         * check({ strict: true });
+         * @returns The exit code.
+         */
+        function check() {
+          return 0;
+        }
+      `,
+      options: jsdocTagLineOptions,
+    },
   ],
   invalid: [
     {
       code: stripIndent`
-        /**
-         * @param value
-         * @returns value
-         */
-        function identity(value) {
-          return value;
-        }
-      `,
-      output: stripIndent`
         /**
          * @param value
          *
@@ -225,8 +316,40 @@ tester.run('javascript jsdoc tag-lines config', tagLinesRule, {
           return value;
         }
       `,
+      output: stripIndent`
+        /**
+         * @param value
+         * @returns value
+         */
+        function identity(value) {
+          return value;
+        }
+      `,
       options: jsdocTagLineOptions,
-      errors: [{ message: 'Expected 1 line between tags but found 0' }],
+      errors: [{ message: 'Expected no lines between tags' }],
+    },
+    {
+      code: stripIndent`
+        /**
+         * Returns the value.
+         * @returns The value.
+         */
+        function identity(value) {
+          return value;
+        }
+      `,
+      output: stripIndent`
+        /**
+         * Returns the value.
+         *
+         * @returns The value.
+         */
+        function identity(value) {
+          return value;
+        }
+      `,
+      options: jsdocTagLineOptions,
+      errors: [{ message: 'Expected 1 lines after block description' }],
     },
   ],
 });

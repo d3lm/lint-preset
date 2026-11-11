@@ -26,6 +26,7 @@ interface BlockOptions {
   readonly paragraphEndings: readonly string[];
   readonly requireJSDocSpacing: boolean;
   readonly enforceParamStyle: boolean;
+  readonly forbidTagIndent: boolean;
 }
 
 interface ResolvedOptions {
@@ -54,7 +55,8 @@ type MessageId =
   | 'blockParagraphEnding'
   | 'blockJSDocBlankLine'
   | 'paramMissingDash'
-  | 'paramDescriptionPeriod';
+  | 'paramDescriptionPeriod'
+  | 'tagContinuationIndent';
 
 type AnyComment = CommentLike | AST.Token;
 
@@ -67,7 +69,10 @@ const TAG_PATTERN = /^\s*(?:TODO|FIXME|HACK|NOTE|BUG|XXX|SAFETY|WARNING|INFO|OPT
 
 const FIRST_WORD_PATTERN = /^\s*([A-Za-z_$][\w$]*)/;
 
-// requires 2+ chars so sentence-starting "A" is not mistaken for an acronym; "I" is a legitimate capital
+/**
+ * The pattern requires 2+ chars, so sentence-starting "A" is not mistaken for an acronym, while "I"
+ * is a legitimate capital.
+ */
 const ALL_CAPS_WORD = /^(?:I|[A-Z][A-Z0-9_]+)$/;
 
 const JSDOC_TAG_LINE = /^\s*\*\s*@[A-Za-z]/;
@@ -78,8 +83,11 @@ const BLOCK_LINE_EMPTY = /^\s*\*\s*$/;
 const CODE_FENCE_LINE = /^\s*\*\s*```/;
 const LIST_ITEM_LINE = /^(?:[-*+]|\d+[.)])\s/;
 
+// tags whose content is code, which keeps its indentation
+const CODE_TAG = /^@(?:example|default|defaultValue)\b/;
+
 const DEFAULT_LINE_ENDINGS = Object.freeze(['etc.', '...', 'e.g.', 'i.e.']);
-const DEFAULT_PARAGRAPH_ENDINGS = Object.freeze(['.', '!', '?', ':', ';', '`', ')', ']', '}']);
+const DEFAULT_PARAGRAPH_ENDINGS = Object.freeze(['.', '!', '?', ':', ';', ')', ']', '}']);
 
 const DEFAULT_OPTIONS: ResolvedOptions = {
   ignoredWords: new Set<string>(),
@@ -104,6 +112,7 @@ const DEFAULT_OPTIONS: ResolvedOptions = {
     paragraphEndings: DEFAULT_PARAGRAPH_ENDINGS,
     requireJSDocSpacing: true,
     enforceParamStyle: true,
+    forbidTagIndent: true,
   },
 };
 
@@ -129,7 +138,6 @@ function isBlockEndingPunctuation(char: string): boolean {
     char === ')' ||
     char === ']' ||
     char === '}' ||
-    char === '`' ||
     char === '>'
   );
 }
@@ -180,13 +188,15 @@ function resolveOptions(raw: unknown): ResolvedOptions {
 }
 
 function isHashbang(comment: AnyComment): boolean {
-  // espree reports hashbangs as `Shebang`; other parsers use a `Line` comment starting with `!` at offset 0
+  /**
+   * Espree reports hashbangs as `Shebang`, while other parsers use a `Line` comment starting with
+   * `!` at offset 0.
+   */
   return (
     comment.type === 'Shebang' || (comment.type === 'Line' && comment.range?.[0] === 0 && comment.value.startsWith('!'))
   );
 }
 
-// unlike `shouldSkipComment`, this does not exempt TODO-style tags since they can be rewrapped like any other prose
 function isUnwrappable(trimmed: string, options: ResolvedOptions): boolean {
   if (options.ignoreDirectives && DIRECTIVE_PATTERN.test(trimmed)) {
     return true;
@@ -385,7 +395,6 @@ function offsetOfLine(comment: AnyComment, lines: readonly string[], lineIndex: 
     return 0;
   }
 
-  // base = range start + length of `/*`, then cumulative line lengths plus their '\n' separators
   let offset = range[0] + 2;
 
   for (let index = 0; index < lineIndex; index += 1) {
@@ -481,8 +490,14 @@ function checkParameterLine(
     return;
   }
 
-  if (!description.endsWith('.')) {
-    const textEndOffset = textStart + text.length;
+  const lastIndex = lastTagLine(lines, lineIndex);
+  const lastMatch = lastIndex === lineIndex ? undefined : BLOCK_LINE_WITH_TEXT.exec(lines[lastIndex]);
+  const ending = lastMatch ? lastMatch[3] : description;
+
+  if (!ending.endsWith('.')) {
+    const textEndOffset = lastMatch
+      ? offsetOfLine(comment, lines, lastIndex) + lastMatch[1].length + lastMatch[2].length + lastMatch[3].length
+      : textStart + text.length;
 
     context.report({
       loc,
@@ -490,6 +505,28 @@ function checkParameterLine(
       fix: (fixer) => fixer.insertTextAfterRange([textEndOffset - 1, textEndOffset], '.'),
     });
   }
+}
+
+function lastTagLine(lines: readonly string[], lineIndex: number): number {
+  let last = lineIndex;
+
+  // the last line of the value holds the closing `*/`
+  while (last + 1 < lines.length - 1) {
+    const next = lines[last + 1];
+
+    if (
+      BLOCK_LINE_EMPTY.test(next) ||
+      JSDOC_TAG_LINE.test(next) ||
+      CODE_FENCE_LINE.test(next) ||
+      !BLOCK_LINE_WITH_TEXT.test(next)
+    ) {
+      break;
+    }
+
+    last += 1;
+  }
+
+  return last;
 }
 
 function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, options: ResolvedOptions): void {
@@ -542,6 +579,9 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
   let paragraphStart = true;
   let skipParagraphEnding = false;
   let previousText: string | undefined;
+  let previousIsCode = false;
+  let afterTag = false;
+  let insideTagProse = false;
 
   for (let index = 1; index < lines.length - 1; index += 1) {
     const line = lines[index];
@@ -551,6 +591,7 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
       paragraphStart = true;
       skipParagraphEnding = false;
       previousText = undefined;
+      insideTagProse = false;
 
       continue;
     }
@@ -560,13 +601,14 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
     }
 
     if (BLOCK_LINE_EMPTY.test(line)) {
-      if (previousText !== undefined && block.requireParagraphCapital && !skipParagraphEnding) {
+      if (previousText !== undefined && block.requireParagraphCapital && !skipParagraphEnding && !previousIsCode) {
         reportParagraphEnding(context, comment, previousText, options);
       }
 
       paragraphStart = true;
       skipParagraphEnding = false;
       previousText = undefined;
+      insideTagProse = false;
 
       continue;
     }
@@ -579,7 +621,6 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
 
     const [, starSegment, spaces, text] = match;
 
-    // list items and JSDoc tags (plus wrapped continuation lines) are exempt from paragraph endings
     if (LIST_ITEM_LINE.test(text) || JSDOC_TAG_LINE.test(line)) {
       skipParagraphEnding = true;
     }
@@ -597,7 +638,13 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
       continue;
     }
 
-    if (block.requireJSDocSpacing && JSDOC_TAG_LINE.test(line) && previousText !== undefined) {
+    const isTagLine = JSDOC_TAG_LINE.test(line);
+
+    /**
+     * Only the first tag needs a blank line before it, since a line between two tags continues
+     * the first one.
+     */
+    if (block.requireJSDocSpacing && isTagLine && !afterTag && previousText !== undefined) {
       const previousLine = lines[index - 1];
 
       if (!BLOCK_LINE_EMPTY.test(previousLine) && !JSDOC_TAG_LINE.test(previousLine)) {
@@ -605,7 +652,25 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
       }
     }
 
-    if (paragraphStart && block.requireParagraphCapital && !JSDOC_TAG_LINE.test(line)) {
+    afterTag ||= isTagLine;
+
+    if (isTagLine) {
+      insideTagProse = !CODE_TAG.test(text);
+    } else if (LIST_ITEM_LINE.test(text)) {
+      insideTagProse = false;
+    } else if (insideTagProse && block.forbidTagIndent && spaces.length > 1) {
+      const indentStart = offsetOfLine(comment, lines, index) + starSegment.length;
+
+      context.report({
+        loc,
+        messageId: 'tagContinuationIndent',
+        fix: (fixer) => fixer.replaceTextRange([indentStart, indentStart + spaces.length], ' '),
+      });
+    }
+
+    const isCodeLine = spaces.length > 1 || (paragraphStart && /^`[^`]+`$/.test(text));
+
+    if (paragraphStart && block.requireParagraphCapital && !isTagLine && !isCodeLine) {
       const firstChar = text[0];
 
       if (firstChar && isLowerCase(firstChar) && !skipParagraphFirstWord(text, options)) {
@@ -629,9 +694,11 @@ function checkMultiLineBlock(context: Rule.RuleContext, comment: AnyComment, opt
     } else {
       previousText = text;
     }
+
+    previousIsCode = isCodeLine;
   }
 
-  if (previousText !== undefined && block.requireParagraphCapital && !skipParagraphEnding) {
+  if (previousText !== undefined && block.requireParagraphCapital && !skipParagraphEnding && !previousIsCode) {
     reportParagraphEnding(context, comment, previousText, options);
   }
 }
@@ -655,6 +722,7 @@ const messages: Record<MessageId, string> = {
   blockJSDocBlankLine: 'Insert a blank line before JSDoc tags.',
   paramMissingDash: "@param should use ' - ' between name and description.",
   paramDescriptionPeriod: '@param description should end with a period.',
+  tagContinuationIndent: 'Continuation lines of a JSDoc tag should not be indented.',
 };
 
 const rule: Rule.RuleModule = {
@@ -715,6 +783,7 @@ const rule: Rule.RuleModule = {
               },
               requireJSDocSpacing: { type: 'boolean' },
               enforceParamStyle: { type: 'boolean' },
+              forbidTagIndent: { type: 'boolean' },
             },
           },
         },
@@ -739,7 +808,10 @@ const rule: Rule.RuleModule = {
             checkLineCommentLength(context, comment, options);
           }
 
-          // the shape check must run before `shouldSkipComment`, whose URL/pattern exemptions only apply to wording
+          /**
+           * The shape check must run before `shouldSkipComment`, whose URL/pattern exemptions only
+           * apply to wording.
+           */
           if (isSingleLineJsdocBlock(comment)) {
             checkSingleLineJsdocBlock(context, comment);
 

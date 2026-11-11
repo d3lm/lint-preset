@@ -6,23 +6,22 @@ import { reactRulesOxlint, resolveReactRuleOptions, type ReactConfigOptions } fr
 import { tsRulesOxlint, type TypeScriptRuleOptions } from './configs/typescript.js';
 
 /**
- * Oxlint loads JS plugins with dynamic `import()`, so resolve specifiers
- * against a package's `import` export condition. `require.resolve` would pick
- * the `require` entry instead, which ESM-first plugins can ship broken.
- * eslint-plugin-jsdoc v63's `index-cjs.cjs` contains ESM syntax and crashes
- * Node's CJS parser. The `import-meta-resolve` ponyfill (bundled at build
- * time) is used over native `import.meta.resolve` because the latter doesn't
- * exist in the CJS build of this preset.
+ * Oxlint loads JS plugins with dynamic `import()`, so resolve specifiers against a
+ * package's `import` export condition. `require.resolve` would pick the `require`
+ * entry instead, and ESM-first plugins can ship that entry broken.
+ *
+ * `eslint-plugin-jsdoc` v63's `index-cjs.cjs` contains ESM syntax and crashes Node's CJS
+ * parser. The `import-meta-resolve` ponyfill (bundled at build time) is used over native
+ * `import.meta.resolve` because the latter doesn't exist in the CJS build of this preset.
  */
 const resolvePlugin = (specifier: string): string => {
   return fileURLToPath(importMetaResolve(specifier, import.meta.url));
 };
 
 /**
- * Our own rules bundle ships as a sibling of this file in `dist`. Resolve it
- * relative to this module instead of via the `@d3lm/lint-preset/rules`
- * self-reference, which only resolves once `dist` exists and would break
- * importing this module from an unbuilt checkout (e.g. tests against `src`).
+ * Our own rules bundle ships as a sibling of this file in `dist`. Resolve it relative to this module
+ * instead of via the `@d3lm/lint-preset/rules` self-reference, which only resolves once `dist` exists
+ * and would break importing this module from an unbuilt checkout (e.g. tests against `src`).
  */
 const ownRulesPath = fileURLToPath(new URL('rules.js', import.meta.url));
 
@@ -49,13 +48,11 @@ export const createOxlintConfig = (options?: CreateConfigOptions): OxlintConfig 
       plugins: reactPlugins,
     }),
     /**
-     * Oxlint resolves `jsPlugins` specifiers from the directory of the
-     * consumer's config file, where these packages don't exist when
-     * node_modules is isolated: they are peer deps of this preset, so pnpm
-     * links them only into this package's own node_modules (pnpm 10 dropped
-     * the default `*eslint*`/`*prettier*` public-hoist-pattern that used to
-     * mask this). Resolve them from inside this package — the same way
-     * `src/eslint.ts` imports its plugins — and hand oxlint absolute paths.
+     * Oxlint resolves `jsPlugins` specifiers from the directory of the consumer's config file, where these
+     * packages don't exist when node_modules is isolated. They are peer deps of this preset, so pnpm links
+     * them only into this package's own node_modules (pnpm 10 dropped the default `*eslint*`/`*prettier*`
+     * public-hoist-pattern that used to mask this). Resolve them from inside this package, the same way
+     * `src/eslint.ts` imports its plugins, and hand oxlint absolute paths.
      */
     jsPlugins: [
       { name: '@d3lm', specifier: ownRulesPath },

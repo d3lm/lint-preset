@@ -41,6 +41,95 @@ tester.run('comment-syntax', rule, {
     `,
     stripIndent`
       /**
+       * Wraps a line with \`the\`
+       * code span in the middle of a paragraph.
+       */
+    `,
+    stripIndent`
+      /**
+       * Prints the rewrap of a comment, for example:
+       *
+       *   \`comments wrap src/a.ts:42\`
+       */
+    `,
+    stripIndent`
+      /**
+       * Runs the default command:
+       *
+       * \`comments check\`
+       */
+    `,
+    stripIndent`
+      /**
+       * Installs the package:
+       *
+       *   npm install foo
+       *   pnpm add foo
+       */
+    `,
+    stripIndent`
+      /**
+       * Parses the source.
+       *
+       * @param options - The options object that configures how the parser handles
+       * comments and their surrounding whitespace.
+       * @returns The parsed program.
+       */
+    `,
+    stripIndent`
+      /**
+       * Parses the source.
+       *
+       * @returns The parsed program, with comments and their surrounding whitespace
+       * attached to the nodes
+       * @throws When the source has a syntax error.
+       */
+    `,
+    stripIndent`
+      /**
+       * Copies a file to a new location.
+       *
+       * @param source - The file to copy.
+       * @param overwrite - Whether an existing file at the destination is replaced, which is off by default
+       * so that a typo never destroys data.
+       * @param foobar - Some other param.
+       *
+       *   Some indented text here.
+       */
+    `,
+    stripIndent`
+      /**
+       * Picks the mode.
+       *
+       * @param mode - The mode to use:
+       *   - \`a\` runs fast and has a description that wraps
+       *     onto another line
+       *   1. \`b\` runs slow.
+       */
+    `,
+    stripIndent`
+      /**
+       * Runs the check.
+       *
+       * @example
+       *   check({ strict: true });
+       * @defaultValue
+       *   { strict: false }
+       */
+    `,
+    {
+      code: stripIndent`
+        /**
+         * Does something.
+         *
+         * @returns The result that wraps
+         *   onto another line.
+         */
+      `,
+      options: [{ block: { forbidTagIndent: false } }],
+    },
+    stripIndent`
+      /**
        * A shortcut modifier.
        *
        * - Some list item
@@ -76,7 +165,7 @@ tester.run('comment-syntax', rule, {
        * Does something.
        *
        * @returns The result that wraps
-       *   onto another line without punctuation
+       * onto another line without punctuation
        */
     `,
     `// wait for it...`,
@@ -243,6 +332,28 @@ tester.run('comment-syntax', rule, {
     {
       code: stripIndent`
         /**
+         * Ends with a code span like \`the\`
+         */
+      `,
+      errors: [{ messageId: 'blockParagraphEnding' }],
+    },
+    {
+      code: stripIndent`
+        /**
+         * Falls back to the default value when nothing is passed, which is
+         * \`undefined\`
+         */
+      `,
+      errors: [{ messageId: 'blockParagraphEnding' }],
+    },
+    {
+      code: `/* Ends with a code span like \`the\` */`,
+      output: `/* Ends with a code span like \`the\`. */`,
+      errors: [{ messageId: 'blockTrailingPunctuation' }],
+    },
+    {
+      code: stripIndent`
+        /**
          *Missing space.
          */
       `,
@@ -301,6 +412,69 @@ tester.run('comment-syntax', rule, {
          */
       `,
       errors: [{ messageId: 'paramDescriptionPeriod' }],
+    },
+    {
+      code: stripIndent`
+        /**
+         * Does something.
+         *
+         * @param options - The options object that configures how the parser handles
+         * comments and their surrounding whitespace
+         * @returns The result.
+         */
+      `,
+      output: stripIndent`
+        /**
+         * Does something.
+         *
+         * @param options - The options object that configures how the parser handles
+         * comments and their surrounding whitespace.
+         * @returns The result.
+         */
+      `,
+      errors: [{ messageId: 'paramDescriptionPeriod' }],
+    },
+    {
+      code: stripIndent`
+        /**
+         * Does something.
+         * @param x - The x, which continues
+         * on the next line.
+         * @returns The result.
+         */
+      `,
+      errors: [{ messageId: 'blockJSDocBlankLine' }],
+    },
+    {
+      code: stripIndent`
+        /**
+         * Copies a file to a new location.
+         *
+         * @param source - The file to copy.
+         * @param overwrite - Whether an existing file at the destination is replaced, which is off by default
+         *   so that a typo never destroys data.
+         * @returns Whether the file was copied, which is false when the destination exists and
+         *    \`overwrite\` is off, or when the source
+         *  is missing.
+         */
+      `,
+      output: stripIndent`
+        /**
+         * Copies a file to a new location.
+         *
+         * @param source - The file to copy.
+         * @param overwrite - Whether an existing file at the destination is replaced, which is off by default
+         * so that a typo never destroys data.
+         * @returns Whether the file was copied, which is false when the destination exists and
+         * \`overwrite\` is off, or when the source
+         * is missing.
+         */
+      `,
+      errors: [
+        { messageId: 'tagContinuationIndent' },
+        { messageId: 'tagContinuationIndent' },
+        { messageId: 'tagContinuationIndent' },
+      ],
     },
     {
       code: stripIndent`

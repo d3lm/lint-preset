@@ -223,7 +223,6 @@ tester.run('comment-preceding-blank-line', rule, {
       errors: [{ messageId: 'missingBlankLine' }],
     },
     {
-      // allowInObjects must not relax the rule for arrays
       code: stripIndent`
         const arr = [
           1,
@@ -243,7 +242,6 @@ tester.run('comment-preceding-blank-line', rule, {
       errors: [{ messageId: 'missingBlankLine' }],
     },
     {
-      // allowInArrays must not relax the rule for objects
       code: stripIndent`
         const obj = {
           a: {},
@@ -458,7 +456,6 @@ tsTester.run('comment-preceding-blank-line (typescript)', rule, {
       errors: [{ messageId: 'missingBlankLine' }],
     },
     {
-      // allowInInterfaces must not relax the rule for unions
       code: stripIndent`
         type MediaInfo =
           | { kind: 'image' }
@@ -476,7 +473,6 @@ tsTester.run('comment-preceding-blank-line (typescript)', rule, {
       errors: [{ messageId: 'missingBlankLine' }],
     },
     {
-      // allowInUnions must not relax the rule for members inside a union's object type
       code: stripIndent`
         type MediaInfo =
           | {
@@ -518,7 +514,6 @@ tsTester.run('comment-preceding-blank-line (typescript)', rule, {
       errors: [{ messageId: 'missingBlankLine' }],
     },
     {
-      // allowInObjects must not relax the rule for interfaces
       code: stripIndent`
         interface EditorLayout {
           editorHostRef: RefObject<HTMLDivElement | null>;

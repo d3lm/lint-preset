@@ -11,12 +11,6 @@ import { createOxlintConfig } from '../../oxlint.js';
 import { tsSyntaxRulesOxlint, tsTypeAwareRulesOxlint } from '../typescript.js';
 import { normalizeRuleName } from './helpers/effective-ruleset.js';
 
-/**
- * Runtime proof that the ESLint → Oxlint rule migration works end to end:
- * every migrated rule fires under Oxlint on a fixture that violates it, and
- * none of them are reported by ESLint anymore (no gaps, no double-reporting).
- */
-
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDirectory, '../../..');
 const fixtureDirectory = path.join(testDirectory, 'fixtures', 'violations');
@@ -28,9 +22,9 @@ const oxlintBin = path.join(path.dirname(require.resolve('oxlint/package.json'))
 const migratedRules = [...Object.keys(tsTypeAwareRulesOxlint), ...Object.keys(tsSyntaxRulesOxlint)];
 
 /**
- * Rule namespaces served by JS plugins wired through Oxlint's `jsPlugins`.
- * The fixture run only exercises native (Rust/tsgolint) rules, so these are
- * stripped to avoid resolving plugin specifiers meant for consumer projects.
+ * Lists the rule namespaces served by JS plugins wired through Oxlint's `jsPlugins`. The fixture
+ * run only exercises native (Rust/tsgolint) rules, so these are stripped to avoid resolving plugin
+ * specifiers meant for consumer projects.
  */
 const jsPluginPrefixes = ['@d3lm/', '@stylistic/', 'prettier/', 'unicornx/', 'jsdocx/'];
 
@@ -58,11 +52,10 @@ function nativeOnlyOxlintConfig(): Record<string, unknown> {
 }
 
 /**
- * Maps an Oxlint config rule id to the scoped codes it may use in JSON
- * output, e.g. `typescript/no-unsafe-call` reports as
- * `typescript-eslint(no-unsafe-call)`. typescript-eslint rules that merely
- * extend an ESLint-core rule (e.g. `no-useless-constructor`) share oxlint's
- * core implementation and report under the `eslint` scope instead.
+ * Maps an Oxlint config rule id to the scoped codes it may use in JSON output, e.g. `typescript/no-unsafe-call`
+ * reports as `typescript-eslint(no-unsafe-call)`. typescript-eslint rules that merely extend an
+ * ESLint-core rule (e.g. `no-useless-constructor`) share oxlint's core implementation and report under the
+ * `eslint` scope instead.
  */
 function toOxlintDiagnosticCodes(rule: string): string[] {
   const [prefix, name] = rule.split('/');
@@ -133,13 +126,11 @@ describe('rule ownership on violation fixtures', () => {
     const results = await eslint.lintFiles(fixtureFiles);
     const messages = results.flatMap((result) => result.messages);
 
-    // a parse or config failure would make the absence check below vacuous
     expect(messages.filter((message) => message.fatal)).toEqual([]);
 
     /**
-     * Positive control: the fixtures are clean for ESLint-owned rules, so
-     * prove the ESLint run is live by feeding it a violation of a rule it
-     * still owns and asserting it reports.
+     * The fixtures don't violate any ESLint-owned rule, so only a violation of a rule ESLint still
+     * owns can show that the ESLint run is live.
      */
     const controlResults = await eslint.lintText('export const mapped = [1].map(function (n) {\n  return n;\n});\n', {
       filePath: path.join(fixtureDirectory, fixtureFiles[0]),

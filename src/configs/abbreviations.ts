@@ -10,6 +10,8 @@ export const ABBREVIATION_REPLACEMENTS: Record<string, Record<string, boolean> |
   props: false,
   util: false,
   utils: false,
+  lib: false,
+  libs: false,
   param: false,
   params: false,
   arg: false,
