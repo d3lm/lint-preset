@@ -382,6 +382,68 @@ describe('analyzeSource', () => {
     `);
   });
 
+  describe('lines that stick out far past the line before them', () => {
+    const settings = { width: 100, maxWidth: 120 };
+
+    const even = stripIndent`
+      /**
+       * Lists the kernel provider operations the external file service calls,
+       * which \`BrowserKernel.externalProvider\` provides. Results the service
+       * ignores are typed \`void\`.
+       */
+    `;
+
+    it('takes another line instead of a short first line that the orphan rule leaves before a full second line', () => {
+      const stepped = stripIndent`
+        /**
+         * Lists the kernel provider operations the external file service calls,
+         * which \`BrowserKernel.externalProvider\` provides. Results the service ignores are typed \`void\`.
+         */
+      `;
+
+      const [comment] = analyzeSource(stepped, 'file.ts', { ...options, ...settings });
+
+      expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`)).toEqual([
+        '3:unbalanced:verdict',
+      ]);
+
+      expect(rewrapComment(comment)).toBe(even);
+    });
+
+    it('accepts the even lines as they are', () => {
+      expect(analyzeSource(even, 'file.ts', { ...options, ...settings }).some((c) => isSuspicious(c))).toBe(false);
+      expect(fix(even, settings)).toBe(even);
+    });
+
+    it('keeps the fewest lines when the extra lines would read as code', () => {
+      const source = [
+        'interface Tables {',
+        '  /**',
+        '   * `initial`/`maximum` are entry counts (`bigint`, so 64-bit `table64` tables',
+        '   * are representable losslessly); `maximum` is `null` for an unbounded table.',
+        '   * `elementType` must be a reference type (e.g. a `funcref`/`externref`',
+        "   * `{ type: 'Ref', ... }`), and may be a concrete ref to an EXISTING type in",
+        "   * this module (`{ type: 'Ref', heap: { type: 'Concrete', typeIndex } }`); a",
+        '   * non-reference type — or an index that names no live type — is rejected with',
+        '   * a catchable error.',
+        '   */',
+        '  add(): void;',
+        '}',
+        '',
+      ].join('\n');
+
+      const narrow = { width: 80, maxWidth: 120, style: false };
+      const [comment] = analyzeSource(source, 'file.ts', { ...options, ...narrow });
+
+      expect(comment.paragraphs.map((paragraph) => paragraph.reflowable)).toEqual([true]);
+
+      const fixed = fix(source, narrow);
+
+      expect(analyzeSource(fixed, 'file.ts', { ...options, ...narrow }).some((c) => hasVerdictIssues(c))).toBe(false);
+      expect(fix(fixed, narrow)).toBe(fixed);
+    });
+  });
+
   it('fills the lines before a short last line when few breaks are allowed', () => {
     const source = stripIndent`
       /**

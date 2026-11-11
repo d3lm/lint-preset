@@ -285,7 +285,7 @@ A comment with an issue in a part that is kept is handed to the agent, which can
 
 ### Configuration
 
-`width` is the preferred line length; `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults to a maximum of 120 columns (or `width`, if larger). A balanced parenthetical can extend a line past `width` when this keeps it together within `maxWidth`. In longer paragraphs, the wrapper balances all lines together and may split a parenthetical when that produces a better layout. If the parenthetical cannot fit on a line of its own, it wraps normally. For example, `width: 80, maxWidth: 120` keeps `(JSDoc types, \`{@link ...}\`)` together in the example below:
+`width` is the preferred line length; `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults to a maximum of 120 columns (or `width`, if larger). A balanced parenthetical can extend a line past `width` when this keeps it together within `maxWidth`. In longer paragraphs, the wrapper balances all lines together and may split a parenthetical when that produces a better layout. A line never sticks out more than 15 columns past the line before it, like a full second line after a first line that the orphan rule keeps short, when up to two more lines avoid that. If the parenthetical cannot fit on a line of its own, it wraps normally. For example, `width: 80, maxWidth: 120` keeps `(JSDoc types, \`{@link ...}\`)` together in the example below:
 
 ```ts
 /**

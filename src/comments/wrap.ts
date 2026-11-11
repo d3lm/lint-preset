@@ -393,6 +393,11 @@ export interface LayoutOptions extends WrapOptions {
    * line holds `@param {Type} name -`.
    */
   readonly keepFirstLine?: boolean;
+
+  /**
+   * Keeps the fewest lines even when a line sticks out far past the line before it.
+   */
+  readonly keepSteps?: boolean;
 }
 
 /**
@@ -402,6 +407,16 @@ export interface LayoutOptions extends WrapOptions {
  */
 const FULLNESS_WEIGHT = 0.07;
 const PARENTHETICAL_SPLIT_WEIGHT = 2;
+
+/**
+ * Sets how many columns a line may stick out past the line before it.
+ */
+const MAX_STEP = 15;
+
+/**
+ * Sets how many lines more than its fewest a layout may take to keep a line from sticking out.
+ */
+const EXTRA_LINES = 2;
 
 /**
  * Holds what the cost of a line depends on, besides the length that the lines aim for.
@@ -682,7 +697,86 @@ function balanceTokens(
   return bounds.slice(0, -1).map((start, index) => tokens.slice(start, bounds[index + 1]));
 }
 
+/**
+ * Returns whether a line sticks out more than `MAX_STEP` columns past the line before it. The first
+ * line starts `offset` columns after the others, so it ends that much later too.
+ */
+function hasStep(lines: readonly (readonly string[])[], offset = 0): boolean {
+  return lines.some((line, index) => {
+    if (index === 0) {
+      return false;
+    }
+
+    const before = lineLength(lines[index - 1]) + (index === 1 ? offset : 0);
+
+    return lineLength(line) - before > MAX_STEP;
+  });
+}
+
+function splitCostsOf(tokens: readonly string[], limit: number): Map<number, number> {
+  const splitCosts = new Map<number, number>();
+
+  for (const group of parentheticalGroups(tokens, limit)) {
+    const length = lineLength(tokens.slice(group.start, group.end));
+
+    for (let at = group.start + 1; at < group.end; at += 1) {
+      splitCosts.set(at, length * PARENTHETICAL_SPLIT_WEIGHT);
+    }
+  }
+
+  return splitCosts;
+}
+
+function hasParentheticals(tokens: readonly string[], restLimit: number, options: WrapOptions): boolean {
+  if (options.parentheticalOverflow === undefined) {
+    return false;
+  }
+
+  return bindParentheticals(tokens, restLimit + options.parentheticalOverflow).some((token) => isParenthetical(token));
+}
+
+/**
+ * Lays the tokens out in even lines. When a line sticks out far past the line before it, like a
+ * full second line after a first line that the orphan rule keeps short, the layout takes up to
+ * `EXTRA_LINES` more lines if those avoid the step.
+ */
 export function layoutTokens(
+  tokens: readonly string[],
+  firstLimit: number,
+  restLimit: number,
+  options: LayoutOptions,
+): string[][] {
+  const lines = layoutLines(tokens, firstLimit, restLimit, options);
+  const offset = restLimit - firstLimit;
+
+  // the first line of a JSDoc tag is never balanced, and the lines after it get their own layout
+  if (options.keepFirstLine || options.keepSteps || !hasStep(lines, offset)) {
+    return lines;
+  }
+
+  const overflow = hasParentheticals(tokens, restLimit, options) ? (options.parentheticalOverflow ?? 0) : 0;
+  const splitCosts = overflow > 0 ? splitCostsOf(tokens, restLimit + overflow) : new Map<number, number>();
+
+  for (let count = lines.length + 1; count <= lines.length + EXTRA_LINES; count += 1) {
+    const even = balanceTokens(
+      tokens,
+      firstLimit + overflow,
+      restLimit + overflow,
+      count,
+      options,
+      restLimit,
+      splitCosts,
+    );
+
+    if (even && !hasStep(even, offset)) {
+      return even;
+    }
+  }
+
+  return lines;
+}
+
+function layoutLines(
   tokens: readonly string[],
   firstLimit: number,
   restLimit: number,
@@ -733,17 +827,7 @@ export function layoutTokens(
         });
       }
 
-      const splitCosts = new Map<number, number>();
-      const groups = parentheticalGroups(tokens, restLimit + options.parentheticalOverflow);
-
-      for (const group of groups) {
-        const length = lineLength(tokens.slice(group.start, group.end));
-
-        for (let at = group.start + 1; at < group.end; at += 1) {
-          splitCosts.set(at, length * PARENTHETICAL_SPLIT_WEIGHT);
-        }
-      }
-
+      const splitCosts = splitCostsOf(tokens, restLimit + options.parentheticalOverflow);
       const preferred = wrapTokens(tokens, firstLimit, restLimit, { ...options, parentheticalOverflow: undefined });
 
       for (let count = minimumLines; count <= Math.max(preferred.length + 1, preserved.length); count += 1) {

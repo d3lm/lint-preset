@@ -16,6 +16,7 @@ import {
   layoutTokens,
   startsBlock,
   tokenize,
+  type LayoutOptions,
   type LineIssue,
   type LineIssueType,
   type WrapOptions,
@@ -859,13 +860,13 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
     keepFirstLine: paragraph.kind === 'tag',
   };
 
-  const layOut = (from: readonly string[]) => {
-    const even = layoutTokens(from, firstLimit, restLimit, layoutOptions);
+  const layOut = (from: readonly string[], settings: LayoutOptions) => {
+    const even = layoutTokens(from, firstLimit, restLimit, settings);
 
-    return { even, wrapped: breakAfterSentence(even, firstLimit, restLimit, layoutOptions) };
+    return { even, wrapped: breakAfterSentence(even, firstLimit, restLimit, settings) };
   };
 
-  let units = bindLineStarts(paragraph.kind === 'tag' ? bindTagHead(tokens) : tokens, startsLine);
+  const units = bindLineStarts(paragraph.kind === 'tag' ? bindTagHead(tokens) : tokens, startsLine);
 
   // the first and the other lines have the same limit, since the hanging indent is as long as the marker
   const hardLimit = restLimit + (options.maxWidth === undefined ? options.tolerance : options.maxWidth - options.width);
@@ -884,8 +885,6 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
     return keep({ tier: 'manual', reason: 'unbreakable text across lines' });
   }
 
-  let { even, wrapped } = layOut(units);
-
   const bodyOf = (lines: readonly (readonly string[])[]): BodyLine[] => {
     return lines.map((words, position) => {
       const text = `${position === 0 ? paragraph.marker : hang}${words.join(' ')}`;
@@ -900,29 +899,44 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
    * moves up a line. Without such a layout, or when the text reads as structure on a single line,
    * no rewrap reads as the same prose, and the paragraph is kept as written.
    */
-  for (;;) {
-    const body = bodyOf(wrapped);
-    const rewrap = structureOf(body);
+  const settle = (settings: LayoutOptions): { even: string[][]; wrapped: string[][] } | Structure => {
+    let current = units;
+    let { even, wrapped } = layOut(current, settings);
 
-    if (!rewrap) {
-      break;
+    for (;;) {
+      const body = bodyOf(wrapped);
+      const rewrap = structureOf(body);
+
+      if (!rewrap) {
+        return { even, wrapped };
+      }
+
+      // the first line has no line to move a word up to, so the first word of the second line joins it instead
+      const tipping = body.findIndex((_, position) => structureOf(body.slice(0, position + 1)) !== undefined);
+      const start = wrapped.slice(0, Math.max(tipping, 1)).flat().length;
+      const pair = `${current[start - 1]} ${current[start]}`;
+
+      if (body.length < 2 || !staysInLimit(pair)) {
+        const reading = rewrap.tier === 'code-like' ? 'code' : rewrap.reason;
+
+        return { tier: 'manual', reason: `rewrap would read as ${reading}` };
+      }
+
+      current = current.toSpliced(start - 1, 2, pair);
+      ({ even, wrapped } = layOut(current, settings));
     }
+  };
 
-    // the first line has no line to move a word up to, so the first word of the second line joins it instead
-    const tipping = body.findIndex((_, position) => structureOf(body.slice(0, position + 1)) !== undefined);
-    const start = wrapped.slice(0, Math.max(tipping, 1)).flat().length;
-    const pair = `${units[start - 1]} ${units[start]}`;
+  const settled = settle(layoutOptions);
 
-    if (body.length < 2 || !staysInLimit(pair)) {
-      const reading = rewrap.tier === 'code-like' ? 'code' : rewrap.reason;
+  // the extra lines that keep a line from sticking out can read as structure where the fewest lines don't
+  const layout = 'wrapped' in settled ? settled : settle({ ...layoutOptions, keepSteps: true });
 
-      return keep({ tier: 'manual', reason: `rewrap would read as ${reading}` });
-    }
-
-    units = units.toSpliced(start - 1, 2, pair);
-    ({ even, wrapped } = layOut(units));
+  if (!('wrapped' in layout)) {
+    return keep(layout);
   }
 
+  const { even, wrapped } = layout;
   const matchesLayout = sameLayout(wrapped, currentLines);
 
   const lineIssues: LineIssue[] = [];
