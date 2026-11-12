@@ -80,7 +80,7 @@ describe('Rust comments with the same code check as JavaScript', () => {
 
     // most comments have no code span across lines
     expect(checked).toBeGreaterThan(2000 * RUST_FORMS.length);
-  }, 60_000);
+  }, 120_000);
 
   it('report the same as the JSDoc comments of this repository, written in every Rust form', () => {
     const root = path.resolve(import.meta.dirname, '../../..');

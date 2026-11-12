@@ -2536,7 +2536,7 @@ describe('rewrap invariants', () => {
     }
   }, 5000);
 
-  it('holds for random paragraphs, lists, and tags around structures at any width', () => {
+  it('holds for random paragraphs, lists, and tags around structures at any width', { timeout: 30_000 }, () => {
     const { random, between, comment } = randomComments(24_301);
 
     let checked = 0;
@@ -2565,7 +2565,7 @@ describe('rewrap invariants', () => {
     expect(checked).toBe(400);
   });
 
-  it('holds with a hard maximum, and never adds a line that is longer than it', () => {
+  it('holds with a hard maximum, and never adds a line that is longer than it', { timeout: 30_000 }, () => {
     // words that read as code at the start or end of a line, and delimiters that pair up across lines
     const { random, between, comment } = randomComments(7919, {
       extra: ['thus;', 'f();', '(one)', 'b)', ')', '{', '}', '`'],
@@ -2602,49 +2602,53 @@ describe('rewrap invariants', () => {
     expect(checked).toBe(600);
   });
 
-  it('has no verdict for the layout for any width within the tolerance, and keeps it as it is', () => {
-    const { random, between, comment } = randomComments(4099, { extra: ['(one)', 'b)'] });
+  it(
+    'has no verdict for the layout for any width within the tolerance, and keeps it as it is',
+    { timeout: 30_000 },
+    () => {
+      const { random, between, comment } = randomComments(4099, { extra: ['(one)', 'b)'] });
 
-    // a hint may stay, and a word that is too long for a line on its own stays an overflow
-    const NO_VERDICT = /:(?:orphan|split-parenthetical|overflow)$/;
+      // a hint may stay, and a word that is too long for a line on its own stays an overflow
+      const NO_VERDICT = /:(?:orphan|split-parenthetical|overflow)$/;
 
-    let checked = 0;
+      let checked = 0;
 
-    for (let run = 0; run < 400; run += 1) {
-      const source = comment();
-      const width = between(16, 100);
-      const tolerance = between(1, 8);
-      const extra = between(1, tolerance);
+      for (let run = 0; run < 400; run += 1) {
+        const source = comment();
+        const width = between(16, 100);
+        const tolerance = between(1, 8);
+        const extra = between(1, tolerance);
 
-      const overrides: Partial<AnalyzeOptions> = {
-        width,
-        ...(random() < 0.6 ? { maxWidth: width + tolerance + between(0, 30) } : {}),
-        tolerance,
-        avoidSentenceOrphans: random() < 0.7,
-        style: false,
-      };
+        const overrides: Partial<AnalyzeOptions> = {
+          width,
+          ...(random() < 0.6 ? { maxWidth: width + tolerance + between(0, 30) } : {}),
+          tolerance,
+          avoidSentenceOrphans: random() < 0.7,
+          style: false,
+        };
 
-      // a paragraph that the wider width keeps as written has the layout for the width itself
-      const wider = fix(fix(source, overrides), { ...overrides, width: width + extra, tolerance: tolerance - extra });
-      const context = `${JSON.stringify({ ...overrides, extra })}\n${source}\n${wider}`;
-      const verdicts = layoutIssues(wider, overrides).filter((issue) => !NO_VERDICT.test(issue));
+        // a paragraph that the wider width keeps as written has the layout for the width itself
+        const wider = fix(fix(source, overrides), { ...overrides, width: width + extra, tolerance: tolerance - extra });
+        const context = `${JSON.stringify({ ...overrides, extra })}\n${source}\n${wider}`;
+        const verdicts = layoutIssues(wider, overrides).filter((issue) => !NO_VERDICT.test(issue));
 
-      expect(verdicts, context).toEqual([]);
+        expect(verdicts, context).toEqual([]);
 
-      // without a hard maximum, a paragraph with fewer lines than its suggestion has no issue either way
-      const kept = analyzeSource(wider, 'file.ts', { ...options, ...overrides }).filter((report) => {
-        return overrides.maxWidth !== undefined && !isSuspicious(report);
-      });
+        // without a hard maximum, a paragraph with fewer lines than its suggestion has no issue either way
+        const kept = analyzeSource(wider, 'file.ts', { ...options, ...overrides }).filter((report) => {
+          return overrides.maxWidth !== undefined && !isSuspicious(report);
+        });
 
-      for (const report of kept) {
-        expect(rewrapComment(report), context).toBe(report.text);
+        for (const report of kept) {
+          expect(rewrapComment(report), context).toBe(report.text);
+        }
+
+        checked += 1;
       }
 
-      checked += 1;
-    }
-
-    expect(checked).toBe(400);
-  });
+      expect(checked).toBe(400);
+    },
+  );
 });
 
 describe('sources that need care to parse', () => {

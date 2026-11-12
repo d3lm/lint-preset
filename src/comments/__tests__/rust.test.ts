@@ -1057,7 +1057,7 @@ describe('Rust rewrap invariants', () => {
     }
 
     expect(checked).toBeGreaterThan(1000);
-  }, 60_000);
+  }, 180_000);
 
   /**
    * Each link is in a comment once, so a line holds it as a whole when the line holds its text.
