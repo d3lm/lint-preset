@@ -171,11 +171,54 @@ describe('wrapTokens', () => {
     expect(wrap('a word (`code`) and more text here', 15)).toEqual(['a word (`code`)', 'and more text', 'here']);
   });
 
-  it('moves the first word of a new clause to the next line', () => {
-    expect(wrap('the add button, these selected items', 20)).toEqual(['the add button,', 'these selected items']);
+  it('moves the first word after a semicolon or colon to the next line', () => {
     expect(wrap('the add button; and the selected items', 22)).toEqual(['the add button;', 'and the selected items']);
-    expect(wrap('red, green, and blue', 11)).toEqual(['red, green,', 'and blue']);
-    expect(wrap('see e.g. the docs', 12)).toEqual(['see e.g. the', 'docs']);
+    expect(wrap('the add button: these selected items', 21)).toEqual(['the add button:', 'these selected items']);
+  });
+
+  it('lets the first word after a comma end a line', () => {
+    expect(wrap('the add button, these selected items', 21)).toEqual(['the add button, these', 'selected items']);
+    expect(wrap('red, green, and blue', 15)).toEqual(['red, green, and', 'blue']);
+
+    // the same text ends its first line early after any other punctuation
+    for (const mark of ['.', '!', '?', ';', ':']) {
+      expect(wrap(`the add button${mark} these selected items`, 21), mark).toEqual([
+        `the add button${mark}`,
+        'these selected items',
+      ]);
+    }
+  });
+
+  it('lets the first word after a comma end a line when a bracket or quote closes after the comma', () => {
+    expect(wrap('(the add button), these selected items', 23)).toEqual(['(the add button), these', 'selected items']);
+    expect(wrap('"the add button," these selected items', 23)).toEqual(['"the add button," these', 'selected items']);
+    expect(wrap('the add `button`, these selected items', 23)).toEqual(['the add `button`, these', 'selected items']);
+
+    expect(wrap('(the add button.) These selected items', 23)).toEqual(['(the add button.)', 'These selected items']);
+    expect(wrap('"the add button;" these selected items', 23)).toEqual(['"the add button;"', 'these selected items']);
+  });
+
+  it('lets the first word after a comma that follows an abbreviation end a line', () => {
+    expect(wrap('use a helper, e.g., the one here', 23)).toEqual(['use a helper, e.g., the', 'one here']);
+    expect(wrap('use a helper (etc.), the one here', 24)).toEqual(['use a helper (etc.), the', 'one here']);
+  });
+
+  it('wraps text whose only punctuation is commas the same with and without the orphan rule', () => {
+    const text =
+      'the add button, the selection filter dropdown, "the selected item count," the `select mode` toggle, and the media view controls';
+
+    const limitsThatDiffer = (value: string): number[] => {
+      const limits = Array.from({ length: 80 }, (_, index) => index + 8);
+
+      return limits.filter((limit) => {
+        return wrap(value, limit).join('\n') !== wrap(value, limit, { avoidSentenceOrphans: false }).join('\n');
+      });
+    };
+
+    expect(limitsThatDiffer(text)).toEqual([]);
+
+    // the rule does move words of the same text once a sentence ends in it
+    expect(limitsThatDiffer(text.replace('dropdown,', 'dropdown.'))).not.toEqual([]);
   });
 
   it('moves a sentence start and a parenthetical down together', () => {
@@ -184,6 +227,7 @@ describe('wrapTokens', () => {
 
   it('does not treat abbreviations as sentence ends', () => {
     expect(wrap('Use a helper, e.g. Foo works fine', 18)).toEqual(['Use a helper, e.g.', 'Foo works fine']);
+    expect(wrap('see e.g. the docs', 12)).toEqual(['see e.g. the', 'docs']);
   });
 
   it('does not treat abbreviations inside brackets or quotes as sentence ends', () => {
@@ -335,6 +379,18 @@ describe('findLineIssues', () => {
       { type: 'orphan', line: 0 },
       { type: 'underfill', line: 0 },
     ]);
+  });
+
+  it('flags lines that end with the first word after a semicolon or colon, or of a parenthetical', () => {
+    for (const first of ['It ends; this', 'It ends: this', 'It ends (this']) {
+      expect(findLineIssues(lines(first, 'goes on'), 13, 13, options), first).toEqual([{ type: 'orphan', line: 0 }]);
+    }
+  });
+
+  it('does not flag a line that ends with the first word after a comma', () => {
+    for (const first of ['It ends, this', 'It ends), and', 'It ends," and', 'It e.g., this']) {
+      expect(findLineIssues(lines(first, 'goes on'), 13, 13, options), first).toEqual([]);
+    }
   });
 
   it('never flags its own output', () => {

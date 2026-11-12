@@ -141,10 +141,10 @@ pub fn scan_rust(source: String) -> RustScan {
   RustScan { comments, error }
 }
 
-/// Returns the tokens of the source without whitespace and comments, used to verify that
-/// only comments changed. A run of doc comments of one style stays as one marker, since doc
-/// comments are attributes of the item after them. Rewording or rewrapping one keeps the
-/// marker, while turning it into another style or into a plain comment changes it.
+/// Returns the tokens of the source without whitespace and comments, used to verify that only
+/// comments changed. A run of doc comments of one style stays as one marker, since doc comments
+/// are attributes of the item after them. Rewording or rewrapping one keeps the marker, while
+/// turning it into another style or into a plain comment changes it.
 #[napi]
 pub fn rust_fingerprint(source: String) -> String {
   let mut parts: Vec<String> = Vec::new();

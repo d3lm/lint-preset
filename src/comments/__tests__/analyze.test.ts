@@ -492,20 +492,21 @@ describe('analyzeSource', () => {
           it('still reports a code span that continues on the next line', () => {
             // each line is 5 columns longer or shorter than in the suggestion, which keeps `git init` whole
             const source = jsdoc(
-              'Creates the repository that the tests run in, and runs `git',
-              'init` in it so that every later command finds',
-              'a work tree.',
+              'Creates the repository that all of the tests run in with `git',
+              'init` so that every later command finds a work tree.',
             );
 
             expect(issuesOf(source, narrow)).toEqual(['2:unbalanced:verdict']);
 
             expect(fix(source, narrow)).toBe(
               jsdoc(
-                'Creates the repository that the tests run in, and runs',
-                '`git init` in it so that every later command finds',
-                'a work tree.',
+                'Creates the repository that all of the tests run in with',
+                '`git init` so that every later command finds a work tree.',
               ),
             );
+
+            // the same lines are fine as they are when no code span holds the two words together
+            expect(issuesOf(source.replaceAll('`', ''), narrow)).toEqual([]);
           });
 
           it('still reports the head of a JSDoc tag that continues on the next line', () => {
@@ -686,8 +687,8 @@ describe('analyzeSource', () => {
 
     expect(fix(source, { width: 120 })).toBe(stripIndent`
       /**
-       * Runs the preset's comment rules on a source, with the options from src/oxlint.ts and src/configs/javascript.ts,
-       * so that every comment the eval treats as valid also passes linting.
+       * Runs the preset's comment rules on a source, with the options from src/oxlint.ts and src/configs/javascript.ts, so
+       * that every comment the eval treats as valid also passes linting.
        */
     `);
   });
@@ -697,20 +698,20 @@ describe('analyzeSource', () => {
 
     const even = stripIndent`
       /**
-       * Lists the kernel provider operations the external file service calls,
-       * which \`BrowserKernel.externalProvider\` provides. Results the service
-       * ignores are typed \`void\`.
+       * Lists the kernel provider operations that the external file service calls.
+       * The \`BrowserKernel.externalProvider\` provides them. Results the service ignores
+       * are typed \`void\`.
+       */
+    `;
+
+    const stepped = stripIndent`
+      /**
+       * Lists the kernel provider operations that the external file service calls.
+       * The \`BrowserKernel.externalProvider\` provides them. Results the service ignores are typed \`void\`.
        */
     `;
 
     it('takes another line instead of a short first line that the orphan rule leaves before a full second line', () => {
-      const stepped = stripIndent`
-        /**
-         * Lists the kernel provider operations the external file service calls,
-         * which \`BrowserKernel.externalProvider\` provides. Results the service ignores are typed \`void\`.
-         */
-      `;
-
       const [comment] = analyzeSource(stepped, 'file.ts', { ...options, ...settings });
 
       expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`)).toEqual([
@@ -718,6 +719,34 @@ describe('analyzeSource', () => {
       ]);
 
       expect(rewrapComment(comment)).toBe(even);
+    });
+
+    it('keeps two lines when the first one may end with the word that the orphan rule moves down', () => {
+      expect(fix(stepped, { ...settings, avoidSentenceOrphans: false })).toBe(stripIndent`
+        /**
+         * Lists the kernel provider operations that the external file service calls. The
+         * \`BrowserKernel.externalProvider\` provides them. Results the service ignores are typed \`void\`.
+         */
+      `);
+    });
+
+    it('keeps two lines when the word before the long one comes after a comma, since it may end the first line', () => {
+      const source = stripIndent`
+        /**
+         * Lists the kernel provider operations the external file service calls,
+         * which \`BrowserKernel.externalProvider\` provides. Results the service ignores are typed \`void\`.
+         */
+      `;
+
+      const fixed = stripIndent`
+        /**
+         * Lists the kernel provider operations the external file service calls, which
+         * \`BrowserKernel.externalProvider\` provides. Results the service ignores are typed \`void\`.
+         */
+      `;
+
+      expect(fix(source, settings)).toBe(fixed);
+      expect(analyzeSource(fixed, 'file.ts', { ...options, ...settings }).some((c) => isSuspicious(c))).toBe(false);
     });
 
     it('accepts the even lines as they are', () => {
@@ -779,7 +808,7 @@ describe('analyzeSource', () => {
     expect(analyzeSource(fixed, 'file.ts', { ...options, width: 120 }).some((c) => isSuspicious(c))).toBe(false);
   });
 
-  it('never leaves the first word of a clause at the end of a line', () => {
+  describe('a line that ends with the first word after a comma', () => {
     const source = stripIndent`
       /**
        * Bottom bar of the list node holding the add button, the selection filter dropdown, the
@@ -787,19 +816,43 @@ describe('analyzeSource', () => {
        */
     `;
 
-    const [comment] = analyzeSource(source, 'file.ts', { ...options, width: 100 });
+    const issuesOf = (text: string, overrides: Partial<AnalyzeOptions>): string[] => {
+      const [comment] = analyzeSource(text, 'file.ts', { ...options, ...overrides });
 
-    expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}`)).toEqual([
-      '2:orphan',
-      '2:unbalanced',
-    ]);
+      return comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}`);
+    };
 
-    expect(fix(source, { width: 100 })).toBe(stripIndent`
-      /**
-       * Bottom bar of the list node holding the add button, the selection filter dropdown, the selected
-       * item count with the select mode toggle, and the media view controls.
-       */
-    `);
+    it('is fine as it is when no more words fit on the line', () => {
+      // `selected` would make the first line one column longer than the width
+      expect(issuesOf(source, { width: 97 })).toEqual([]);
+      expect(fix(source, { width: 97 })).toBe(source);
+    });
+
+    it('has no hint when more words fit on the line, only the verdict of a line that ends early', () => {
+      expect(issuesOf(source, { width: 100 })).toEqual(['2:unbalanced']);
+
+      expect(fix(source, { width: 100 })).toBe(stripIndent`
+        /**
+         * Bottom bar of the list node holding the add button, the selection filter dropdown, the selected
+         * item count with the select mode toggle, and the media view controls.
+         */
+      `);
+    });
+  });
+
+  it('hints at the first word after a semicolon or colon at the end of a line', () => {
+    const sources: [string, number][] = [
+      [jsdoc('It closes the socket; the', 'request stays open.'), 28],
+      [jsdoc('It takes two inputs: the', 'request and the socket.'), 27],
+    ];
+
+    for (const [source, width] of sources) {
+      const [comment] = analyzeSource(source, 'file.ts', { ...options, width, style: false });
+
+      expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`)).toEqual([
+        '2:orphan:hint',
+      ]);
+    }
   });
 
   it('moves an opening parenthesis to the next line', () => {
@@ -1052,8 +1105,8 @@ describe('analyzeSource', () => {
   it('rewraps prose JSDoc tags whose type or link holds pipes, instead of treating them as a table', () => {
     const source = stripIndent`
       /**
-       * @param {string | number | null} value - The value to convert, which
-       * is {@link format | formatted} first.
+       * @param {string | number | null} value - The value to convert,
+       * which is {@link format | formatted} first.
        */
     `;
 
@@ -1063,8 +1116,8 @@ describe('analyzeSource', () => {
 
     expect(fix(source)).toBe(stripIndent`
       /**
-       * @param {string | number | null} value - The value to convert,
-       * which is {@link format | formatted} first.
+       * @param {string | number | null} value - The value to convert, which
+       * is {@link format | formatted} first.
        */
     `);
   });
@@ -1255,17 +1308,18 @@ describe('analyzeSource', () => {
   it('keeps the lines before the last as even as possible, even when one of them could be longer', () => {
     const source = stripIndent`
       /**
-       * Lines on stderr interpolate model-influenced bytes (case ids, error text that can echo model output,
+       * Lines written to stderr interpolate model-influenced bytes (case ids, error text that can echo model output,
        * JSON.parse messages). Strip escape sequences and control characters, as build-report-lite.mjs's
        * eprint does, so a planted OSC/CSI can't retitle the terminal or forge output lines.
        */
     `;
 
+    // `so a` fits on the second line too, which would make it 5 columns longer than the first
     expect(fix(source, { width: 120 })).toBe(stripIndent`
       /**
-       * Lines on stderr interpolate model-influenced bytes (case ids, error text that can echo model output,
-       * JSON.parse messages). Strip escape sequences and control characters, as build-report-lite.mjs's eprint
-       * does, so a planted OSC/CSI can't retitle the terminal or forge output lines.
+       * Lines written to stderr interpolate model-influenced bytes (case ids, error text that can echo model output,
+       * JSON.parse messages). Strip escape sequences and control characters, as build-report-lite.mjs's eprint does,
+       * so a planted OSC/CSI can't retitle the terminal or forge output lines.
        */
     `);
   });
@@ -1578,14 +1632,22 @@ describe('analyzeSource', () => {
   });
 
   it('does not treat punctuation inside a code span as the end of a clause', () => {
-    const source = jsdoc(
-      'Splits the input on every occurrence of the separator, which is `,` characters',
-      'by default.',
-    );
+    const issueTypes = (source: string): string[] => {
+      const [comment] = analyzeSource(source, 'file.ts', options);
 
-    const [comment] = analyzeSource(source, 'file.ts', options);
+      return comment.paragraphs[0].issues.map((issue) => issue.type);
+    };
 
-    expect(comment.paragraphs[0].issues.map((issue) => issue.type)).toEqual(['overflow', 'widow']);
+    for (const mark of [';', ':', '.', '?']) {
+      const first = `Splits the input on every occurrence of the separator, which is \`${mark}\` characters`;
+
+      expect(issueTypes(jsdoc(first, 'by default.')), mark).toEqual(['overflow', 'widow']);
+    }
+
+    // outside of a code span, the word after the semicolon may start something new
+    expect(
+      issueTypes(jsdoc('Splits the input on every occurrence of the separator, which is ; characters', 'by default.')),
+    ).toContain('orphan');
   });
 
   it('is idempotent', () => {
@@ -2319,6 +2381,32 @@ describe('rewrap invariants', () => {
     }
   });
 
+  it('lays out a paragraph whose only punctuation is commas the same with and without the orphan rule', () => {
+    const text =
+      'Bottom bar of the list node holding the add button, the selection filter dropdown, the selected item count with the select mode toggle, and the media view controls, which the list shows below its rows, and which it hides while the rows are loading';
+
+    const widthsThatDiffer = (source: string): number[] => {
+      const widths: number[] = [];
+
+      for (let width = 20; width <= 110; width += 1) {
+        const maxWidth = width + 20;
+
+        for (const settings of [{ width }, { width, maxWidth }, { width, maxWidth, tolerance: 5 }]) {
+          if (fix(source, settings) !== fix(source, { ...settings, avoidSentenceOrphans: false })) {
+            widths.push(width);
+          }
+        }
+      }
+
+      return widths;
+    };
+
+    expect(widthsThatDiffer(jsdoc(text))).toEqual([]);
+
+    // the rule does move words of the same paragraph once a sentence ends in it
+    expect(widthsThatDiffer(jsdoc(text.replace('controls, which', 'controls. It')))).not.toEqual([]);
+  });
+
   describe('paragraphs without a rewrap that reads as the same prose', () => {
     const settings = { width: 80, maxWidth: 100 };
 
@@ -2857,7 +2945,7 @@ describe('issue tiers', () => {
   it('only hints at line ends that may strand a sentence, since an abbreviation or name can end the line instead', () => {
     const sources: [string, number][] = [
       [jsdoc('Please read item No. 3', 'for more details.'), 25],
-      [jsdoc('Contact Doe, John', 'for more details.'), 20],
+      [jsdoc('Contact John Q. Public', 'for more details.'), 25],
     ];
 
     for (const [source, width] of sources) {
@@ -2867,6 +2955,13 @@ describe('issue tiers', () => {
         '2:orphan:hint',
       ]);
     }
+  });
+
+  it('has no hint for a line that ends with the word after a comma, like the first name in `Doe, John`', () => {
+    const comment = commentOf(jsdoc('Contact Doe, John', 'for more details.'), { width: 20 });
+
+    expect(comment.paragraphs[0].issues).toEqual([]);
+    expect(isSuspicious(comment)).toBe(false);
   });
 
   describe('a line that may end with the start of a sentence and also ends early', () => {
@@ -2909,11 +3004,27 @@ describe('issue tiers', () => {
 
     it('reports a paragraph as unbalanced when more than the possible orphan sets it apart from the suggestion', () => {
       const source = jsdoc(
+        'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes. The',
+        '20-byte IP header plus the 8-byte UDP header leave 65507 bytes of payload.',
+      );
+
+      expect(issuesOf(source, wide)).toEqual(['2:orphan:hint', '2:unbalanced:verdict']);
+
+      expect(rewrapComment(commentOf(source, wide))).toBe(
+        jsdoc(
+          'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes. The 20-byte IP header plus the',
+          '8-byte UDP header leave 65507 bytes of payload.',
+        ).trimEnd(),
+      );
+    });
+
+    it('reports the same line as unbalanced without a hint when its last word comes after a comma', () => {
+      const source = jsdoc(
         'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes, and',
         'the 20-byte IP header plus the 8-byte UDP header leave 65507 bytes of payload.',
       );
 
-      expect(issuesOf(source, wide)).toEqual(['2:orphan:hint', '2:unbalanced:verdict']);
+      expect(issuesOf(source, wide)).toEqual(['2:unbalanced:verdict']);
 
       expect(rewrapComment(commentOf(source, wide))).toBe(
         jsdoc(
@@ -3050,8 +3161,8 @@ describe('issue tiers', () => {
 
       expect(rewrapComment(commentOf(source, wide))).toBe(
         jsdoc(
-          'Reads the options from the config file,',
-          'which [the guide to wrapping comments](https://example.com/guide)',
+          'Reads the options from the config file, which',
+          '[the guide to wrapping comments](https://example.com/guide)',
           'describes with an example for each of them.',
         ).trimEnd(),
       );

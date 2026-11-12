@@ -53,10 +53,10 @@ export const CODE_SPAN = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
 /**
  * Matches a colon after a word with more text after it on the same line, like `Optional: skips it`
  * or `...through its presets: the rules that...`. A colon that ends a line introduces what's below
- * it. Markers like `TODO:` or `WARNING:` that start a sentence are conventions read by tooling,
- * and a colon after a code span or `{@link}` (replaced by `code` in prose) introduces a definition,
- * like `` `width`: the maximum width ``, so neither counts. Neither does an identifier in camel or
- * snake case, like `maxRetries: 3`, which is a property.
+ * it. Markers like `TODO:` or `WARNING:` that start a sentence are conventions read by tooling, and
+ * a colon after a code span or `{@link}` (replaced by `code` in prose) introduces a definition, like
+ * `` `width`: the maximum width ``, so neither counts. Neither does an identifier in camel or snake
+ * case, like `maxRetries: 3`, which is a property.
  */
 const COLON =
   /(?<=[\w)\]'"’])(?<!(?:^|[.!?]\s+)(?:[A-Z]{2,}|[Tt]odo|[Ff]ixme|[Hh]ack|[Xx]xx))(?<!\b(?:code|url|entity|[A-Za-z][a-z\d]*[A-Z]\w*|\w*_\w*)):\s+\S/;

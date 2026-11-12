@@ -219,8 +219,8 @@ describe('the comments flow on Rust files', () => {
         '//! See [`permissions`], [`Provider`], and [`count_provider_reads`] for',
         '//! the main items, or [the provider module][`provider`] for the rest.',
         '//! A [link with a destination](crate::permissions::Permission) and',
-        '//! [a link to an anchor](crate::Provider#method.reads) also resolve,',
-        '//! and so do [`Vec<T>`] and [HashMap<K, V>].',
+        '//! [a link to an anchor](crate::Provider#method.reads) also resolve, and',
+        '//! so do [`Vec<T>`] and [HashMap<K, V>].',
         '',
       ].join('\n'),
     );

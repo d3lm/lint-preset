@@ -488,6 +488,28 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('Review each comment against the rules');
     expect(prompt).not.toContain('has no other notes as it is');
   });
+
+  it('notes a line that may end with the start of a sentence, but not one that ends with the word after a comma', () => {
+    const settings = { width: 22, tabWidth: 2, tolerance: 0, avoidSentenceOrphans: true, style: true };
+
+    const notesOf = (source: string): string[] => {
+      const comments = analyzeSource(source, 'src/a.ts', settings);
+      const prompt = buildPrompt({ rules: '# Rules', root: '/repo', comments });
+      const section = prompt.slice(prompt.indexOf('### src/a.ts'));
+
+      return section.split('\n').filter((line) => line.startsWith('- '));
+    };
+
+    expect(notesOf('/**\n * It ends here. This\n * goes on and on.\n */\n')).toEqual([
+      expect.stringMatching(
+        /^- possible: line 2 may end with the start of a new sentence or parenthetical, or with the first word after a semicolon or colon, which belongs on the next line \(leave it if .+\)$/,
+      ),
+    ]);
+
+    expect(notesOf('/**\n * It ends here, and\n * goes on and on.\n */\n')).toEqual([
+      '- no measured issues; review the wording and flow',
+    ]);
+  });
 });
 
 describe('DEFAULT_RULES', () => {
@@ -508,6 +530,25 @@ describe('DEFAULT_RULES', () => {
     expect(DEFAULT_RULES).toContain("Don't count columns, and don't apply a stricter limit than the notes show.");
     expect(DEFAULT_RULES).toContain('Exact text and intentional layout win over the width');
     expect(DEFAULT_RULES).not.toMatch(/No line may exceed|leaves at least three words/);
+  });
+
+  it('keeps the start of a sentence off the end of a line, and lets the word after a comma end one', () => {
+    const rule = DEFAULT_RULES.split('\n').find((line) => line.startsWith("- Don't end a line with the first word"));
+
+    expect(rule).toContain('of a new sentence or parenthetical, like `This` after a period or `(the`');
+    expect(rule).toContain('or with the first word after a semicolon or colon. Move it to the next line instead.');
+    expect(rule).toContain('The word after a comma is no such word. A line may end with it, like `and` in');
+
+    // the tool lets that word end a line, so the rules must not tell the agent to move it down
+    expect(DEFAULT_RULES).not.toMatch(/after a comma, or|sentence, clause, or parenthetical/);
+
+    const prompt = buildPrompt({ rules: DEFAULT_RULES, root: '/repo', comments: [] });
+
+    expect(prompt).toContain(
+      '- A note that a line may end with the start of a sentence or parenthetical, or with the first word after a semicolon or colon, is the exception.',
+    );
+
+    expect(prompt).not.toMatch(/sentence, clause, or parenthetical/);
   });
 
   it('lets a long word that starts a sentence stay at the end of a line that would otherwise end early', () => {

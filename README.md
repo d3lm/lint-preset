@@ -261,7 +261,7 @@ Verdicts are layout issues that can be measured without reading the prose. They 
 
 Hints come from heuristics and can be false positives, because only the meaning of the prose shows whether the rule applies. A hint only sends a comment to the agent, which decides whether to change it. `check` only prints comments with verdicts, so a passing check stays quiet apart from its summary, even when hints remain after review. Use `list --suspicious` to inspect hints, which are marked with `(hint)` and never fail a check:
 
-- `orphan` means a line ends with the first word of a sentence, a line ends with the first two words of a sentence that the suggested rewrap moves to the next line, or the first of two lines ends with the start of a sentence that fits on the second without making it longer than the first
+- `orphan` means a line ends with the first word of a sentence or parenthetical, or with the first word after a semicolon or colon (but not after a comma), a line ends with the first two words of a sentence that the suggested rewrap moves to the next line, or the first of two lines ends with the start of a sentence that fits on the second without making it longer than the first
 - `split-parenthetical` means a line ends inside a parenthetical that the suggested rewrap keeps on one line within `maxWidth`
 - `em-dash` means the comment uses `—`
 - `dash` means the comment uses `–` or `--` between words

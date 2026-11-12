@@ -237,9 +237,9 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
 
 /**
  * These rules can't run under Oxlint. They are ESLint-core rules that Oxlint hasn't implemented
- * (`prefer-arrow-callback`) or only ships in its nursery category (`no-useless-assignment`), and no
- * plugin we can alias into oxlint's `jsPlugins` exposes them, because the `@eslint/js` package only
- * ships configs, not a raw `rules` object. ESLint picks them up after Oxlint runs.
+ * (`prefer-arrow-callback`) or only ships in its nursery category (`no-useless-assignment`), and
+ * no plugin we can alias into oxlint's `jsPlugins` exposes them, because the `@eslint/js` package
+ * only ships configs, not a raw `rules` object. ESLint picks them up after Oxlint runs.
  */
 export function jsRulesEslint(_options: JavaScriptRuleOptions = {}): Linter.RulesRecord {
   return {

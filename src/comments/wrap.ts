@@ -1,10 +1,11 @@
 export interface WrapOptions {
   /**
-   * Sets whether a line may not end with the first word of a sentence, clause, or parenthetical,
-   * like `This`, `the` after a comma, or `(the`. Such a word moves to the next line instead.
-   * It also sets whether a line avoids ending with the first two words of a sentence, and whether
-   * the first of two lines ends with a sentence instead of the start of the next one, as long as
-   * the second line is then no longer than the first.
+   * Sets whether a line may not end with the first word of a sentence or parenthetical, like
+   * `This` or `(the`, or with the first word after a semicolon or colon. Such a word moves to
+   * the next line instead. The word after a comma may end a line. It also sets whether a line
+   * avoids ending with the first two words of a sentence, and whether the first of two lines
+   * ends with a sentence instead of the start of the next one, as long as the second line is
+   * then no longer than the first.
    */
   readonly avoidSentenceOrphans: boolean;
 
@@ -34,6 +35,14 @@ export interface LineIssue {
 // punctuation inside a code span, like `,` or `?.`, is code and doesn't end a clause or sentence
 const CLAUSE_END = /[.!?,;:]["')\]*_]*$/;
 const SENTENCE_END = /[.!?]["')\]*_]*$/;
+
+/**
+ * Matches a word that ends a sentence, or that ends with a semicolon or colon. The word after
+ * it starts something new, so it stays off the end of a line. A comma is left out, because
+ * the sentence goes on after one. A line may end with the word after a comma, like `and` in
+ * `...the paths, and`, and keeping that word off the end would only make the lines less even.
+ */
+const STATEMENT_END = /[.!?;:]["')\]*_]*$/;
 
 /**
  * Holds only abbreviations that never end a sentence, unlike `no.` or `max.`, which can also be the
@@ -406,8 +415,8 @@ export function bindParentheticals(tokens: readonly string[], limit: number): st
   return units;
 }
 
-function endsClause(token: string): boolean {
-  return CLAUSE_END.test(token) && !isAbbreviation(token);
+function endsStatement(token: string): boolean {
+  return STATEMENT_END.test(token) && !isAbbreviation(token);
 }
 
 function endsSentence(token: string): boolean {
@@ -418,17 +427,23 @@ function opensAside(token: string): boolean {
   return /^[([]/.test(token) && !/[)\]]["'`.,;:!?]*$/.test(token);
 }
 
+/**
+ * Returns whether a line shouldn't end with the token, because it is the first word of a
+ * sentence, of the part after a semicolon or colon, or of a parenthetical. A word that ends
+ * a clause itself, like `Done.` or `However,`, may end a line, and so may the word after a
+ * comma (see `STATEMENT_END`).
+ */
 function isOrphan(previous: string, token: string): boolean {
-  return opensAside(token) || (endsClause(previous) && !CLAUSE_END.test(token));
+  return opensAside(token) || (endsStatement(previous) && !CLAUSE_END.test(token));
 }
 
 /**
- * Returns whether Markdown or JSDoc reads a word as the start of a block when it begins a line, like a
- * list marker (`-`, `1.`), a heading (`#`), a quote (any word that starts with `>`, like `>=`), a fence,
- * a table row, an HTML tag, comment, or declaration (`<div>`, `<!--`, `<?`), or a JSDoc tag like `@param`.
- * A run of `-`, `=`, `*`, or `_` on a line of its own is a heading underline or a rule, so it never starts
- * a line either. Wrapping must never move such a word to the start of a line, or the paragraph would turn
- * into something else.
+ * Returns whether Markdown or JSDoc reads a word as the start of a block when it begins a line, like
+ * a list marker (`-`, `1.`), a heading (`#`), a quote (any word that starts with `>`, like `>=`),
+ * a fence, a table row, an HTML tag, comment, or declaration (`<div>`, `<!--`, `<?`), or a JSDoc
+ * tag like `@param`. A run of `-`, `=`, `*`, or `_` on a line of its own is a heading underline or
+ * a rule, so it never starts a line either. Wrapping must never move such a word to the start of a
+ * line, or the paragraph would turn into something else.
  */
 export function startsBlock(token: string): boolean {
   return (

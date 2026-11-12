@@ -187,9 +187,9 @@ function fileState(absolute: string): string {
 
 /**
  * Maps every file that differs from `HEAD` or is untracked to its state. Any edit to the working
- * tree shows up as a difference between two of these snapshots, including an edit that brings a file
- * back to its committed text, since that file is then missing from the later snapshot. Returns
- * `undefined` when git can't list the files.
+ * tree shows up as a difference between two of these snapshots, including an edit that brings
+ * a file back to its committed text, since that file is then missing from the later snapshot.
+ * Returns `undefined` when git can't list the files.
  */
 export function snapshotChanges(root: string): Map<string, string> | undefined {
   try {

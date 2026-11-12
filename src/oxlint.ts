@@ -6,9 +6,9 @@ import { reactRulesOxlint, resolveReactRuleOptions, type ReactConfigOptions } fr
 import { tsRulesOxlint, type TypeScriptRuleOptions } from './configs/typescript.js';
 
 /**
- * Oxlint loads JS plugins with dynamic `import()`, so resolve specifiers against a
- * package's `import` export condition. `require.resolve` would pick the `require`
- * entry instead, and ESM-first plugins can ship that entry broken.
+ * Oxlint loads JS plugins with dynamic `import()`, so resolve specifiers against a package's
+ * `import` export condition. `require.resolve` would pick the `require` entry instead, and
+ * ESM-first plugins can ship that entry broken.
  *
  * `eslint-plugin-jsdoc` v63's `index-cjs.cjs` contains ESM syntax and crashes Node's CJS
  * parser. The `import-meta-resolve` ponyfill (bundled at build time) is used over native

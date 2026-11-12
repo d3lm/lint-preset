@@ -343,6 +343,41 @@ describe('runs of Rust line doc comments', () => {
       `/// ${'word '.repeat(15).trim()}\n/// ${'word '.repeat(5).trim()}.\nfn a() {}\n`,
     );
   });
+
+  it('lets a line end with the first word after a comma, instead of with the word after that one too', () => {
+    const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+    const head = [
+      "/// Identifies who holds a file's operation lock. Threads are recorded rather than processes",
+      '/// because threads die without their process dying through the detach and teardown paths, and',
+      '/// a process-granular sweep would either miss those deaths or rip the lock from a live sibling',
+    ];
+
+    // `story` fits on the fourth line, which ends 6 columns before it, one more than the tolerance
+    const source = [
+      ...head,
+      '/// thread mid-operation. Conversions run without a process context, and their cancellation',
+      '/// story is the owner-death and unregistration machinery. A volume flush also runs without one,',
+      '/// and its owner releases its claim on every exit path.',
+      'pub struct Owner;',
+      '',
+    ].join('\n');
+
+    const rewrapped = [
+      ...head,
+      '/// thread mid-operation. Conversions run without a process context, and their cancellation story',
+      '/// is the owner-death and unregistration machinery. A volume flush also runs without one, and',
+      '/// its owner releases its claim on every exit path.',
+      'pub struct Owner;',
+      '',
+    ].join('\n');
+
+    // the second line has no hint, and it still ends with `paths, and` after the rewrap
+    expect(issues(source, settings)).toEqual(['4:unbalanced']);
+    expect(fix(source, settings)).toBe(rewrapped);
+    expect(issues(rewrapped, settings)).toEqual([]);
+    expect(fix(rewrapped, settings)).toBe(rewrapped);
+  });
 });
 
 describe('rustdoc Markdown', () => {
@@ -375,8 +410,8 @@ describe('rustdoc Markdown', () => {
       '//! See [`permissions`], [`Provider`], and [`count_provider_reads`] for',
       '//! the main items, or [the provider module][`provider`] for the rest.',
       '//! A [link with a destination](crate::permissions::Permission) and',
-      '//! [a link to an anchor](crate::Provider#method.reads) also resolve,',
-      '//! and so do [`Vec<T>`] and [HashMap<K, V>].',
+      '//! [a link to an anchor](crate::Provider#method.reads) also resolve, and',
+      '//! so do [`Vec<T>`] and [HashMap<K, V>].',
       '',
     ].join('\n');
 
@@ -601,8 +636,8 @@ describe('rustdoc Markdown', () => {
 
 /**
  * Each of these once changed what rustdoc renders for a doc comment of a crate on crates.io,
- * which `native/verify/verify.mjs` found. All but the last also apply to JSDoc comments,
- * which are Markdown too, so they are checked in both languages.
+ * which `native/verify/verify.mjs` found. All but the last also apply to JSDoc comments, which
+ * are Markdown too, so they are checked in both languages.
  */
 describe('Markdown that a rewrap must never create or join', () => {
   const both = (lines: readonly string[]) => {
@@ -971,9 +1006,9 @@ describe('Rust rewrap invariants', () => {
   }
 
   /**
-   * Returns the prose paragraphs with a line that ends inside a token, like a link, a code span,
-   * or a `{...}` group that continues on the next line. The tokens of such a paragraph differ from
-   * the tokens of its lines.
+   * Returns the prose paragraphs with a line that ends inside a token, like a link, a code span, or
+   * a `{...}` group that continues on the next line. The tokens of such a paragraph differ from the
+   * tokens of its lines.
    */
   function splitTokens(source: string, settings: Partial<AnalyzeOptions>) {
     const lines = source.split('\n');

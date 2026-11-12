@@ -53,9 +53,9 @@ export interface AnalyzeOptions extends WrapOptions {
   readonly maxWidth?: number;
 
   /**
-   * Sets the maximum length of the line that holds a comment whose whole text is one
-   * prose paragraph. Such a comment stays on one line up to this length plus `tolerance`,
-   * even past `width`, but never past `maxWidth`. It defaults to `width`.
+   * Sets the maximum length of the line that holds a comment whose whole text is one prose
+   * paragraph. Such a comment stays on one line up to this length plus `tolerance`, even past
+   * `width`, but never past `maxWidth`. It defaults to `width`.
    */
   readonly singleLineWidth?: number;
 
@@ -502,8 +502,8 @@ const THEMATIC_BREAK = /^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/;
  * Headings, link definitions, HTML, quotes, and rules are markup, since joining them with the
  * next line would turn them into prose. That includes the start of a list item, like `- [x]: y`,
  * a quote like `>=`, an HTML comment like `<!--`, and a line of only `=` or `-`, which underlines
- * a heading. Prose can start a line like that too, like `<T> is the type` or `# of retries`,
- * so markup is kept as written, but it still has to fit the width.
+ * a heading. Prose can start a line like that too, like `<T> is the type` or `# of retries`, so
+ * markup is kept as written, but it still has to fit the width.
  */
 function isMarkup(prose: string): boolean {
   const text = prose.replace(LIST_MARKER, '');

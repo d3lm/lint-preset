@@ -108,7 +108,7 @@ export interface CommentsConfig {
    * Sets the maximum length of the line that holds a comment whose whole text is one prose
    * paragraph. Such a comment stays on one line up to this length plus `tolerance`, even past
    * `width`, and is wrapped to `width` beyond it. Defaults to 120, and the line never exceeds
-   * `maxWidth`.
+   * the `maxWidth` limit.
    */
   readonly singleLineWidth?: number;
 
@@ -124,12 +124,13 @@ export interface CommentsConfig {
 
   /**
    * Keep the first word of a new sentence or parenthetical off the end of a line, e.g.
-   * `...the module. This` or `...reflows (the` followed by the rest on the next line.
-   * A paragraph of two lines also ends its first line with a sentence when the rest fits
-   * on the second line and is no longer than the first, instead of with the start of
-   * the next sentence, like `...the module. This one`. Other lines avoid ending with the
-   * first two words of a sentence, like `...opens. It allocates`, unless that makes them
-   * much less even. Defaults to `true`.
+   * `...the module. This` or `...reflows (the` followed by the rest on the next line. The same
+   * goes for the first word after a semicolon or colon, but not after a comma, so a line may
+   * end with `...the paths, and`. A paragraph of two lines also ends its first line with a
+   * sentence when the rest fits on the second line and is no longer than the first, instead
+   * of with the start of the next sentence, like `...the module. This one`. Other lines avoid
+   * ending with the first two words of a sentence, like `...opens. It allocates`, unless that
+   * makes them much less even. Defaults to `true`.
    */
   readonly avoidSentenceOrphans?: boolean;
 
