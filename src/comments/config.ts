@@ -113,10 +113,12 @@ export interface CommentsConfig {
   readonly singleLineWidth?: number;
 
   /**
-   * Sets how many columns prose lines may go past `width` when that saves a line in a paragraph of
-   * three or more lines. A paragraph that already has the layout for a wider `width`, up to `width`
-   * plus this many columns, also passes as it is. It never goes past `maxWidth`. When `maxWidth` is
-   * omitted, it also sets a legacy hard limit of `width + tolerance`.
+   * Sets how many columns prose lines may go past `width` when that saves a line in a paragraph
+   * of three or more lines. A paragraph that already has the layout for a wider `width`, up to
+   * `width` plus this many columns, also passes as it is. So does a paragraph with as many lines
+   * as the rewrap whose lines are each at most this many columns shorter or longer than in the
+   * rewrap. It never goes past `maxWidth`. When `maxWidth` is omitted, it also sets a legacy hard
+   * limit of `width + tolerance`.
    */
   readonly tolerance?: number;
 

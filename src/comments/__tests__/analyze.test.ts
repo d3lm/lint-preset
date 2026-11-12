@@ -229,6 +229,14 @@ describe('analyzeSource', () => {
     });
 
     describe('tolerance', () => {
+      const issuesOf = (source: string, overrides: Partial<AnalyzeOptions>): string[] => {
+        return analyzeSource(source, 'file.ts', { ...options, ...overrides }).flatMap((comment) =>
+          comment.paragraphs.flatMap((paragraph) =>
+            paragraph.issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`),
+          ),
+        );
+      };
+
       const wrapped = indented(
         jsdoc(
           "`EPERM` means the registration was superseded and `EINTR` means the seat's wait queue was cancelled,",
@@ -275,14 +283,6 @@ describe('analyzeSource', () => {
 
       describe('the layout for a wider width', () => {
         const settings = { width: 100, maxWidth: 120, tolerance: 5 };
-
-        const issuesOf = (source: string, overrides: Partial<AnalyzeOptions>): string[] => {
-          return analyzeSource(source, 'file.ts', { ...options, ...overrides }).flatMap((comment) =>
-            comment.paragraphs.flatMap((paragraph) =>
-              paragraph.issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`),
-            ),
-          );
-        };
 
         // the layout for a width of 105, with lines of 105, 104, 103, and 58 columns
         const wider = jsdoc(
@@ -373,6 +373,159 @@ describe('analyzeSource', () => {
               'omitted, it also sets a legacy hard limit of `width + tolerance`.',
             ),
           );
+        });
+      });
+
+      describe('lines close to the suggestion', () => {
+        const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+        const head = [
+          'Renders `/proc/meminfo` from the VFS accounting the kernel already keeps, so the file describes',
+          'the kernel-managed VFS budget rather than the Wasm allocator or host memory. `MemTotal` is the',
+          'fixed VFS capacity, `Shmem` is the accounted tmpfs footprint, `Cached` equals `Shmem` because',
+          "tmpfs belongs to Linux's cached total and no separate cache counter exists, and `MemAvailable`",
+          'equals `MemFree` because no reclaim path could promise more. Every unmeasured field stays at',
+          'zero. The kernel keeps no block-device buffer cache, no LRU or recency accounting, no swap,',
+        ];
+
+        // the last two lines have 95 and 99 columns, which is 3 fewer and 3 more than in the suggestion
+        const close = jsdoc(
+          ...head,
+          'and no slab accounting, and pipe, socket, FIFO, and PTY payload bytes must not be mislabeled',
+          'as slab. All arithmetic happens in bytes before each printed value floor-divides into kilobytes.',
+        );
+
+        const preferred = jsdoc(
+          ...head,
+          'and no slab accounting, and pipe, socket, FIFO, and PTY payload bytes must not be mislabeled as',
+          'slab. All arithmetic happens in bytes before each printed value floor-divides into kilobytes.',
+        );
+
+        // the suggestion keeps `(as `warn`)` on one line, with lines of 106, 103, and 57 columns
+        const past = [
+          'Lists the Unicorn recommended rules natively implemented by Oxlint, grouped by the oxlint category they',
+          "belong to. Only the correctness group is enabled by oxlint's defaults (as `warn`). Everything is set",
+          'explicitly to `error` to match the recommended config.',
+        ];
+
+        it('accepts lines within the tolerance of the suggestion, and keeps them as they are', () => {
+          expect(issuesOf(close, settings)).toEqual([]);
+          expect(fix(close, settings)).toBe(close);
+          expect(issuesOf(close, { ...settings, tolerance: 3 })).toEqual([]);
+          expect(fix(preferred, settings)).toBe(preferred);
+        });
+
+        it('accepts them without a hard maximum too', () => {
+          const legacy = { width: 100, tolerance: 5 };
+
+          expect(issuesOf(close, legacy)).toEqual([]);
+          expect(fix(close, legacy)).toBe(close);
+        });
+
+        it('reports them when the tolerance is smaller than the difference, and wraps to the suggestion', () => {
+          for (const tolerance of [0, 2]) {
+            expect(issuesOf(close, { ...settings, tolerance })).toEqual(['8:unbalanced:verdict']);
+            expect(fix(close, { ...settings, tolerance })).toBe(preferred);
+          }
+        });
+
+        it('accepts a line past the width plus the tolerance that the suggestion has too', () => {
+          // only `set` moved down, so the first line still has the 106 columns of the suggestion
+          const source = jsdoc(
+            past[0],
+            "belong to. Only the correctness group is enabled by oxlint's defaults (as `warn`). Everything is",
+            'set explicitly to `error` to match the recommended config.',
+          );
+
+          expect(issuesOf(source, settings)).toEqual([]);
+          expect(fix(source, settings)).toBe(source);
+        });
+
+        it('reports a longer line that ends past the width plus the tolerance', () => {
+          // `they` moved down, which gives the second line 108 columns instead of the 103 of the suggestion
+          const source = jsdoc(
+            'Lists the Unicorn recommended rules natively implemented by Oxlint, grouped by the oxlint category',
+            "they belong to. Only the correctness group is enabled by oxlint's defaults (as `warn`). Everything is set",
+            past[2],
+          );
+
+          expect(issuesOf(source, settings)).toEqual(['2:unbalanced:verdict']);
+          expect(fix(source, settings)).toBe(jsdoc(...past));
+        });
+
+        it('still reports a widow', () => {
+          // `of` moved up, which leaves `them holds.` on a last line that is 3 columns shorter
+          const source = jsdoc(
+            'Lists the files whose state differs between two snapshots, including files that only one of',
+            'them holds.',
+          );
+
+          expect(issuesOf(source, settings)).toEqual(['3:widow:verdict']);
+
+          expect(fix(source, settings)).toBe(
+            jsdoc(
+              'Lists the files whose state differs between two snapshots, including files that only one',
+              'of them holds.',
+            ),
+          );
+        });
+
+        it('still reports a paragraph that has a possible orphan too, so the rewrap moves the word', () => {
+          const source = jsdoc(
+            'Lists files, directories, `file:line`, or `file:start-end` targets. When',
+            'empty, the git scope below applies.',
+          );
+
+          expect(issuesOf(source, settings)).toEqual(['2:orphan:hint', '2:unbalanced:verdict']);
+
+          expect(fix(source, settings)).toBe(
+            jsdoc(
+              'Lists files, directories, `file:line`, or `file:start-end` targets.',
+              'When empty, the git scope below applies.',
+            ),
+          );
+        });
+
+        describe('a line that ends inside text that stays on one line', () => {
+          const narrow = { width: 60, maxWidth: 80, tolerance: 5 };
+
+          it('still reports a code span that continues on the next line', () => {
+            // each line is 5 columns longer or shorter than in the suggestion, which keeps `git init` whole
+            const source = jsdoc(
+              'Creates the repository that the tests run in, and runs `git',
+              'init` in it so that every later command finds',
+              'a work tree.',
+            );
+
+            expect(issuesOf(source, narrow)).toEqual(['2:unbalanced:verdict']);
+
+            expect(fix(source, narrow)).toBe(
+              jsdoc(
+                'Creates the repository that the tests run in, and runs',
+                '`git init` in it so that every later command finds',
+                'a work tree.',
+              ),
+            );
+          });
+
+          it('still reports the head of a JSDoc tag that continues on the next line', () => {
+            // each line is 4 columns shorter or longer than in the suggestion, which keeps `a -` on the first line
+            const source = jsdoc(
+              '@param {Map<string, ReadonlyArray<Handler>>}',
+              'a - Describes how each request finds the handler',
+              'that serves it.',
+            );
+
+            expect(issuesOf(source, narrow)).toEqual(['2:unbalanced:verdict']);
+
+            expect(fix(source, narrow)).toBe(
+              jsdoc(
+                '@param {Map<string, ReadonlyArray<Handler>>} a -',
+                'Describes how each request finds the handler',
+                'that serves it.',
+              ),
+            );
+          });
         });
       });
     });

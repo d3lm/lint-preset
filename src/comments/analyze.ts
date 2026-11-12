@@ -106,10 +106,10 @@ export interface ParagraphReport {
   readonly issues: readonly IssueReport[];
 
   /**
-   * Holds the exact source lines for `startLine` through `endLine` when the paragraph is
-   * greedily wrapped to the width, or `null` when the paragraph isn't prose, e.g. code,
-   * a table, a diagram, or `@example`. A paragraph that is accepted with the layout for a
-   * wider width within the tolerance keeps its lines.
+   * Holds the exact source lines for `startLine` through `endLine` when the paragraph is greedily
+   * wrapped to the width, or `null` when the paragraph isn't prose, e.g. code, a table, a diagram,
+   * or `@example`. A paragraph that the tolerance accepts as it is, with the layout for a wider
+   * width or with lines close to this one, keeps its lines.
    */
   readonly suggestion: readonly string[] | null;
 }
@@ -1231,10 +1231,41 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
   };
 
   /**
+   * The tolerance holds for each line on its own too, in both directions. A paragraph with as many
+   * lines as the suggestion is fine as it is when no line is more than the tolerance shorter or
+   * longer than the same line of the suggestion. A longer line still ends within the tolerance past
+   * the width, unless the line of the suggestion already ends past it. No line may end inside text
+   * that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
+   */
+  const staysNearLayout = (): boolean => {
+    if (currentLines.length !== wrapped.length || splitTokenLine(currentLines, units) !== -1) {
+      return false;
+    }
+
+    return currentLines.every((words, position) => {
+      const length = words.join(' ').length;
+      const suggestedLength = wrapped[position].join(' ').length;
+      const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
+
+      return (
+        Math.abs(length - suggestedLength) <= layoutOptions.tolerance && length <= Math.max(suggestedLength, limit)
+      );
+    });
+  };
+
+  const hasVerdict = lineIssues.some((issue) => isVerdict(issue));
+
+  /**
+   * Lines that are close to the suggestion are even enough, which says nothing about a widow, and a
+   * possible orphan in a paragraph that is `unbalanced` too is still for the rewrap to move.
+   */
+  const onlyUnbalanced = lineIssues.every((issue) => issue.type === 'unbalanced');
+
+  /**
    * A paragraph that only has hints keeps them and its suggestion, since a hint is for the agent to
    * decide. Only verdicts go, and the suggestion then keeps the lines as they are.
    */
-  const accepted = lineIssues.some((issue) => isVerdict(issue)) && matchesWiderLayout();
+  const accepted = hasVerdict && (matchesWiderLayout() || (onlyUnbalanced && staysNearLayout()));
   const suggested = accepted ? currentLines : wrapped;
 
   const suggestion = suggested.map(
