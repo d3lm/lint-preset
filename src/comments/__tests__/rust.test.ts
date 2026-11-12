@@ -337,7 +337,7 @@ describe('runs of Rust line doc comments', () => {
     const source = `/// ${'word '.repeat(20).trim()}.\nfn a() {}\n`;
 
     expect(issues(source, { width: 80, maxWidth: 120, singleLineWidth: 120 })).toEqual([]);
-    expect(issues(source, { width: 80, maxWidth: 120, singleLineWidth: 100 })).toEqual(['1:unbalanced']);
+    expect(issues(source, { width: 80, maxWidth: 120, singleLineWidth: 100 })).toEqual(['1:wide']);
 
     expect(fix(source, { width: 80, maxWidth: 120, singleLineWidth: 100 })).toBe(
       `/// ${'word '.repeat(15).trim()}\n/// ${'word '.repeat(5).trim()}.\nfn a() {}\n`,
@@ -353,7 +353,7 @@ describe('runs of Rust line doc comments', () => {
       '/// a process-granular sweep would either miss those deaths or rip the lock from a live sibling',
     ];
 
-    // `story` fits on the fourth line, which ends 6 columns before it, one more than the tolerance
+    // `story` fits on the fourth line, whose 91 columns are 1 fewer than the shortest line of the rewrap
     const source = [
       ...head,
       '/// thread mid-operation. Conversions run without a process context, and their cancellation',
@@ -373,10 +373,58 @@ describe('runs of Rust line doc comments', () => {
     ].join('\n');
 
     // the second line has no hint, and it still ends with `paths, and` after the rewrap
-    expect(issues(source, settings)).toEqual(['4:unbalanced']);
-    expect(fix(source, settings)).toBe(rewrapped);
+    expect(issues(source, { ...settings, tolerance: 0 })).toEqual(['4:unbalanced']);
+    expect(fix(source, { ...settings, tolerance: 0 })).toBe(rewrapped);
     expect(issues(rewrapped, settings)).toEqual([]);
     expect(fix(rewrapped, settings)).toBe(rewrapped);
+
+    expect(issues(source, settings)).toEqual([]);
+    expect(fix(source, settings)).toBe(source);
+  });
+
+  it('accepts lines that one word moved down puts out of line with the rewrap, within the tolerance', () => {
+    const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+    // `meaning` fits on the first line, and the rewrap that moves it up has lines of 92 to 98 columns
+    const source = [
+      'impl Kernel {',
+      '  /// Drains the stable ids of external files that became fully dead since the last drain,',
+      '  /// meaning their link count reached zero with no open descriptions remaining and no provider',
+      "  /// call for them left unanswered. A drained id's stored bytes are unreachable from this kernel,",
+      '  /// so the host can reclaim them locally and propagate the deletion upstream. The log lives in',
+      '  /// kernel memory, so a host that needs crash safety pairs this with a sweep of its store against',
+      '  /// [`external_live_stable_ids`](Self::external_live_stable_ids) at session start. A re-claim of',
+      '  /// an undrained id withdraws its retirement, because the stored bytes belong to the new use',
+      '  /// from that moment.',
+      '  fn drain(&mut self) {}',
+      '}',
+      '',
+    ].join('\n');
+
+    expect(issues(source, settings)).toEqual([]);
+    expect(fix(source, settings)).toBe(source);
+
+    // the first line has 90 columns, more than 1 fewer than the 92 of the shortest line of the rewrap
+    expect(issues(source, { ...settings, tolerance: 1 })).toEqual(['2:unbalanced']);
+  });
+
+  it('reports a line past the width plus the tolerance as wide', () => {
+    const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+    const source = [
+      '/*',
+      ' * The errnos below follow a Linux reference run in which root and an unprivileged user ran each operation',
+      " * against a writable /dev. The trusted host stands in for root. The kernel's own /dev entries behave like",
+      ' * mounts pinned over their names whose attributes alone can change, so a removal, rename, or link Linux',
+      ' * lets root perform on a devtmpfs node fails where the comments say so.',
+      ' */',
+      'fn a() {}',
+      '',
+    ].join('\n');
+
+    // the first two lines have 106 columns, one more than the width plus the tolerance
+    expect(issues(source, settings)).toEqual(['2:wide', '3:wide']);
+    expect(issues(source, { ...settings, tolerance: 6 })).toEqual([]);
   });
 });
 
@@ -953,7 +1001,7 @@ describe('codeFingerprint for Rust', () => {
 });
 
 describe('Rust rewrap invariants', () => {
-  const LAYOUT = new Set(['overflow', 'underfill', 'widow', 'unbalanced', 'orphan']);
+  const LAYOUT = new Set(['overflow', 'underfill', 'widow', 'unbalanced', 'wide', 'orphan']);
 
   // words of Rust docs: intra-doc links, paths, generics, lifetimes, and attributes
   const RUST_WORDS = [

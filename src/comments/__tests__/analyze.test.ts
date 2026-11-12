@@ -328,7 +328,7 @@ describe('analyzeSource', () => {
         it('reports it when the tolerance is too small, and still wraps to the width itself', () => {
           const small = { ...settings, tolerance: 4 };
 
-          expect(issuesOf(wider, small)).toEqual(['2:unbalanced:verdict']);
+          expect(issuesOf(wider, small)).toEqual(['2:wide:verdict']);
           expect(fix(wider, small)).toBe(preferred);
           expect(fix(preferred, settings)).toBe(preferred);
         });
@@ -341,7 +341,8 @@ describe('analyzeSource', () => {
           ]);
         });
 
-        it('reports a paragraph that goes past the width with the layout for no width', () => {
+        it('accepts a paragraph with the layout for no width whose lines stay within the tolerance', () => {
+          // lines of 105, 98, 94, and 73 columns, where the suggestion has 85, 99, 98, and 88
           const moved = jsdoc(
             'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and `RelayAnyDatagram`.',
             'It owns the client-to-remote queue and its pump, the backend closed watcher, and the idempotent',
@@ -349,8 +350,11 @@ describe('analyzeSource', () => {
             'validation and the recv-to-frame mapping stay in the concrete classes.',
           );
 
-          expect(issuesOf(moved, settings)).toEqual(['2:unbalanced:verdict']);
-          expect(fix(moved, settings)).toBe(preferred);
+          expect(issuesOf(moved, settings)).toEqual([]);
+          expect(fix(moved, settings)).toBe(moved);
+
+          expect(issuesOf(moved, { ...settings, tolerance: 4 })).toEqual(['2:wide:verdict']);
+          expect(fix(moved, { ...settings, tolerance: 4 })).toBe(preferred);
         });
 
         it('keeps a hint and its suggestion, since a hint is for the agent to decide', () => {
@@ -422,11 +426,15 @@ describe('analyzeSource', () => {
           expect(fix(close, legacy)).toBe(close);
         });
 
-        it('reports them when the tolerance is smaller than the difference, and wraps to the suggestion', () => {
-          for (const tolerance of [0, 2]) {
-            expect(issuesOf(close, { ...settings, tolerance })).toEqual(['8:unbalanced:verdict']);
-            expect(fix(close, { ...settings, tolerance })).toBe(preferred);
-          }
+        it('compares each line with the shortest line of the suggestion, not with the same line', () => {
+          // the second to last line has 95 columns, 3 fewer than in the suggestion but 1 more than its shortest line
+          expect(issuesOf(close, { ...settings, tolerance: 1 })).toEqual([]);
+          expect(fix(close, { ...settings, tolerance: 1 })).toBe(close);
+        });
+
+        it('reports them without a tolerance, and wraps to the suggestion', () => {
+          expect(issuesOf(close, { ...settings, tolerance: 0 })).toEqual(['8:unbalanced:verdict']);
+          expect(fix(close, { ...settings, tolerance: 0 })).toBe(preferred);
         });
 
         it('accepts a line past the width plus the tolerance that the suggestion has too', () => {
@@ -442,14 +450,14 @@ describe('analyzeSource', () => {
         });
 
         it('reports a longer line that ends past the width plus the tolerance', () => {
-          // `they` moved down, which gives the second line 108 columns instead of the 103 of the suggestion
+          // `they` moved down, which gives the second line 108 columns, more than any line of the suggestion
           const source = jsdoc(
             'Lists the Unicorn recommended rules natively implemented by Oxlint, grouped by the oxlint category',
             "they belong to. Only the correctness group is enabled by oxlint's defaults (as `warn`). Everything is set",
             past[2],
           );
 
-          expect(issuesOf(source, settings)).toEqual(['2:unbalanced:verdict']);
+          expect(issuesOf(source, settings)).toEqual(['3:wide:verdict']);
           expect(fix(source, settings)).toBe(jsdoc(...past));
         });
 
@@ -2164,7 +2172,7 @@ describe('analyzeSource false positives', () => {
   }
 
   function styleIssuesOf(source: string): string[] {
-    const layout = new Set(['overflow', 'underfill', 'orphan', 'widow', 'unbalanced', 'split-parenthetical']);
+    const layout = new Set(['overflow', 'underfill', 'orphan', 'widow', 'unbalanced', 'wide', 'split-parenthetical']);
 
     return issuesOf(source).filter((issue) => !layout.has(issue.split(':')[1]));
   }
@@ -2317,7 +2325,7 @@ function textLength(line: string): number {
 }
 
 describe('rewrap invariants', () => {
-  const LAYOUT = new Set(['overflow', 'underfill', 'widow', 'unbalanced', 'orphan', 'split-parenthetical']);
+  const LAYOUT = new Set(['overflow', 'underfill', 'widow', 'unbalanced', 'wide', 'orphan', 'split-parenthetical']);
 
   function layoutIssues(source: string, overrides: Partial<AnalyzeOptions>): string[] {
     return analyzeSource(source, 'file.ts', { ...options, ...overrides }).flatMap((comment) =>

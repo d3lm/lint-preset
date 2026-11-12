@@ -21,7 +21,14 @@ export interface WrapOptions {
   readonly parentheticalOverflow?: number;
 }
 
-export type LineIssueType = 'overflow' | 'underfill' | 'orphan' | 'widow' | 'unbalanced' | 'split-parenthetical';
+export type LineIssueType =
+  | 'overflow'
+  | 'underfill'
+  | 'orphan'
+  | 'widow'
+  | 'unbalanced'
+  | 'wide'
+  | 'split-parenthetical';
 
 export interface LineIssue {
   readonly type: LineIssueType;

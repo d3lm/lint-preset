@@ -4,7 +4,7 @@
 
 Each issue type has a tier, set in `ISSUE_TIERS` in `src/comments/analyze.ts`:
 
-- **Verdicts** (`overflow`, `underfill`, `widow`, `unbalanced`) fail `comments check` and count as remaining after the agent ran.
+- **Verdicts** (`overflow`, `underfill`, `widow`, `unbalanced`, `wide`) fail `comments check` and count as remaining after the agent ran.
 - **Hints** (`orphan`, `split-parenthetical`, `banner`, `em-dash`, `semicolon`, `label-colon`, `emphasis`, `dash`) only pick which comments the agent sees. The prompt marks them as possible issues, and the agent decides whether the rule applies.
 
 Hint checks are heuristics, so false positives are expected and acceptable. A false positive costs one agent look at a comment. It never fails a check.

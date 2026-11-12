@@ -76,6 +76,7 @@ const ISSUE_TIERS: Record<IssueType, IssueTier> = {
   underfill: 'verdict',
   widow: 'verdict',
   unbalanced: 'verdict',
+  wide: 'verdict',
   orphan: 'hint',
   'split-parenthetical': 'hint',
   banner: 'hint',
@@ -1180,6 +1181,22 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
       return sameLayout(breakAfterSentence(restLines, restLimit, restLimit, restOptions), currentLines.slice(line + 1));
     };
 
+    /**
+     * A paragraph that differs from the suggestion is `wide` on each line that ends more than the
+     * tolerance past the width and past every line of the suggestion, and `unbalanced` otherwise.
+     */
+    const differenceAt = (line: number): LineIssue[] => {
+      const longest = Math.max(...wrapped.map((words) => words.join(' ').length));
+
+      const wide = currentLines.flatMap((words, position): LineIssue[] => {
+        const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
+
+        return words.join(' ').length > Math.max(limit, longest) ? [{ type: 'wide', line: position }] : [];
+      });
+
+      return wide.length > 0 ? wide : [{ type: 'unbalanced', line }];
+    };
+
     if (overflow.length === 0 && (currentLines.length === wrapped.length || options.maxWidth !== undefined)) {
       const line = Math.max(
         wrapped.findIndex((words, position) => words.join(' ') !== currentLines[position]?.join(' ')),
@@ -1193,13 +1210,15 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
       if (lineIssues.length === 0 && (sameLayout(even, currentLines) || keepsOnlySentenceStarts())) {
         lineIssues.push({ type: 'orphan', line });
       } else if (lineIssues.length === 0) {
-        lineIssues.push({ type: splitsOnlyParenthetical(line) ? 'split-parenthetical' : 'unbalanced', line });
+        lineIssues.push(
+          ...(splitsOnlyParenthetical(line) ? [{ type: 'split-parenthetical', line } as const] : differenceAt(line)),
+        );
       } else if (
         lineIssues.every((issue) => issue.type === 'orphan') &&
         !sameLayout(even, currentLines) &&
         !keepsOnlyOrphans()
       ) {
-        lineIssues.push({ type: 'unbalanced', line });
+        lineIssues.push(...differenceAt(line));
       }
     }
 
@@ -1231,24 +1250,32 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
   };
 
   /**
-   * The tolerance holds for each line on its own too, in both directions. A paragraph with as many
-   * lines as the suggestion is fine as it is when no line is more than the tolerance shorter or
-   * longer than the same line of the suggestion. A longer line still ends within the tolerance past
-   * the width, unless the line of the suggestion already ends past it. No line may end inside text
-   * that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
+   * The tolerance holds for each line on its own too. A paragraph with as many lines as the
+   * suggestion is fine as it is when each line but the last is at most the tolerance shorter
+   * than the shortest of those lines in the suggestion, and no line ends more than the tolerance
+   * past the width, unless the same line of the suggestion ends past it too. The shortest line
+   * is the measure, since one word that moves shifts every line after it. No line may end inside
+   * text that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
    */
   const staysNearLayout = (): boolean => {
-    if (currentLines.length !== wrapped.length || splitTokenLine(currentLines, units) !== -1) {
+    if (
+      layoutOptions.tolerance === 0 ||
+      currentLines.length !== wrapped.length ||
+      splitTokenLine(currentLines, units) !== -1
+    ) {
       return false;
     }
 
+    const shortest = Math.min(...wrapped.slice(0, -1).map((words) => words.join(' ').length));
+
     return currentLines.every((words, position) => {
       const length = words.join(' ').length;
-      const suggestedLength = wrapped[position].join(' ').length;
       const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
+      const isLast = position === currentLines.length - 1;
 
       return (
-        Math.abs(length - suggestedLength) <= layoutOptions.tolerance && length <= Math.max(suggestedLength, limit)
+        (isLast || length >= shortest - layoutOptions.tolerance) &&
+        length <= Math.max(wrapped[position].join(' ').length, limit)
       );
     });
   };

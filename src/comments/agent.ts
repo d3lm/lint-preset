@@ -101,6 +101,7 @@ const ISSUE_DESCRIPTIONS: Record<Exclude<IssueType, 'overflow'>, string> = {
   widow: 'leaves fewer than three words on the last line of its paragraph',
   unbalanced:
     'is in a paragraph whose lines are less even than the suggested rewrap, or that splits a link or code span that the rewrap keeps on one line',
+  wide: 'ends more than the tolerance past the width, and past every line of the suggested rewrap',
   orphan:
     'may end with the start of a new sentence or parenthetical, or with the first word after a semicolon or colon, which belongs on the next line (leave it if the punctuation before it is part of an abbreviation, a name, or notation like `No. 3`, or if it is a long word like an identifier and moving it would leave the line far shorter than the lines around it)',
   'split-parenthetical':
