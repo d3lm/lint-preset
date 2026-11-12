@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 export type AgentRunner = 'claude' | 'codex' | 'cursor';
 export type HookMode = 'agent' | 'report' | 'off';
-export type AgentScope = 'suspicious' | 'all';
+export type AgentScope = 'suspicious' | 'failing' | 'all';
 
 export interface AgentConfig {
   /**
@@ -71,8 +71,10 @@ export interface AgentConfig {
    * Selects which comments the agent sees. `suspicious` (default) is a triage, not a full review.
    * It only sends comments with hints, like a possible semicolon or a line that may end with the
    * first word of a sentence, and comments with issues in parts the tool never rewraps, so most
-   * runs never call the agent. The tool fixes the layout of prose itself. `all` sends every comment
-   * in changed lines, so that the agent reviews the wording of each against its rules.
+   * runs never call the agent. The tool fixes the layout of prose itself. `failing` sends only
+   * the comments with verdicts, the ones that fail `comments check`, and no comment that only has
+   * hints. `all` sends every comment in changed lines, so that the agent reviews the wording of
+   * each against its rules.
    */
   readonly scope?: AgentScope;
 }
@@ -90,8 +92,9 @@ export interface HookConfig {
 
 export interface CommentsConfig {
   /**
-   * Sets the preferred line length for comments, including indentation and the comment prefix.
-   * Defaults to prettier's `printWidth`, or 80.
+   * Sets the preferred line length for comments, including indentation and the comment
+   * prefix. Defaults to prettier's `printWidth`, or 80. In Rust files, it defaults to
+   * rustfmt's `comment_width` instead, which is 80 by default too.
    */
   readonly width?: number;
 
@@ -137,9 +140,16 @@ export interface CommentsConfig {
   readonly style?: boolean;
 
   /**
-   * Lists the file extensions to process. Defaults to JavaScript and TypeScript extensions.
+   * Lists the file extensions to process. Defaults to JavaScript, TypeScript, and Rust extensions.
    */
   readonly extensions?: readonly string[];
+
+  /**
+   * Lists glob patterns, relative to the repository root, of the only files to process.
+   * Without patterns, every file with one of the `extensions` is processed. `ignore` still
+   * skips files that match both.
+   */
+  readonly include?: readonly string[];
 
   /**
    * Lists glob patterns, relative to the repository root, of files to skip.
@@ -154,7 +164,7 @@ export interface LoadedConfig {
   readonly filepath?: string;
 }
 
-export const DEFAULT_EXTENSIONS = Object.freeze(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
+export const DEFAULT_EXTENSIONS = Object.freeze(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.rs']);
 
 const CONFIG_FILES = [
   'comments.config.ts',
@@ -218,10 +228,12 @@ export function validateConfig(raw: unknown, filepath: string): CommentsConfig {
   assertType(config.avoidSentenceOrphans, 'boolean', 'avoidSentenceOrphans', filepath);
   assertType(config.style, 'boolean', 'style', filepath);
   assertType(config.extensions, 'array', 'extensions', filepath);
+  assertType(config.include, 'array', 'include', filepath);
   assertType(config.ignore, 'array', 'ignore', filepath);
   assertType(config.agent, 'object', 'agent', filepath);
   assertType(config.hook, 'object', 'hook', filepath);
   assertStrings(config.extensions, 'extensions', filepath);
+  assertStrings(config.include, 'include', filepath);
   assertStrings(config.ignore, 'ignore', filepath);
 
   for (const key of ['width', 'maxWidth', 'singleLineWidth', 'tolerance'] as const) {
@@ -266,8 +278,8 @@ export function validateConfig(raw: unknown, filepath: string): CommentsConfig {
   assertType(agent.rules, 'string', 'agent.rules', filepath);
   assertType(agent.instructions, 'string', 'agent.instructions', filepath);
 
-  if (agent.scope !== undefined && agent.scope !== 'suspicious' && agent.scope !== 'all') {
-    throw new Error(`comments: \`agent.scope\` in ${filepath} must be "suspicious" or "all"`);
+  if (agent.scope !== undefined && !['suspicious', 'failing', 'all'].includes(agent.scope as string)) {
+    throw new Error(`comments: \`agent.scope\` in ${filepath} must be one of suspicious, failing, all`);
   }
 
   const hook = (config.hook ?? {}) as Record<string, unknown>;
@@ -425,5 +437,61 @@ export class PrettierOptionsResolver {
     this._cache.set(directory, options);
 
     return options;
+  }
+}
+
+const RUSTFMT_FILES = ['rustfmt.toml', '.rustfmt.toml'];
+
+// rustfmt indents with four spaces by default
+const RUSTFMT_TAB_SPACES = 4;
+
+/**
+ * Reads the widths of Rust files from the nearest rustfmt config, like rustfmt does.
+ * It maps `comment_width` to `printWidth`, since that is the width rustfmt wraps comments
+ * at, and `tab_spaces` to `tabWidth`.
+ */
+export class RustfmtOptionsResolver {
+  private readonly _cache = new Map<string, PrettierOptions>();
+
+  constructor(private readonly _root: string) {}
+
+  private _read(directory: string): PrettierOptions {
+    const cached = this._cache.get(directory);
+
+    if (cached) {
+      return cached;
+    }
+
+    let options: PrettierOptions | undefined;
+
+    for (const name of RUSTFMT_FILES) {
+      const filepath = path.join(directory, name);
+
+      if (existsSync(filepath)) {
+        const text = readFileSync(filepath, 'utf8');
+        const commentWidth = /^\s*comment_width\s*=\s*(\d+)/m.exec(text)?.[1];
+        const tabSpaces = /^\s*tab_spaces\s*=\s*(\d+)/m.exec(text)?.[1];
+
+        options = {
+          printWidth: commentWidth === undefined ? undefined : Number(commentWidth),
+          tabWidth: tabSpaces === undefined ? RUSTFMT_TAB_SPACES : Number(tabSpaces),
+        };
+
+        break;
+      }
+    }
+
+    const parent = path.dirname(directory);
+
+    options ??=
+      directory === this._root || parent === directory ? { tabWidth: RUSTFMT_TAB_SPACES } : this._read(parent);
+
+    this._cache.set(directory, options);
+
+    return options;
+  }
+
+  resolve(file: string): PrettierOptions {
+    return this._read(path.dirname(file));
   }
 }

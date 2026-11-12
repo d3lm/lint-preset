@@ -65,6 +65,83 @@ describe('tokenize', () => {
   it('treats an unmatched backtick as a regular character', () => {
     expect(tokenize('a ` b')).toEqual(['a', '`', 'b']);
   });
+
+  it('keeps each form of a Markdown link intact, including its spaces', () => {
+    const links = [
+      '[a link to an anchor](crate::Provider#method.reads)',
+      '[the provider module][`provider`]',
+      '[the provider module][]',
+      '[HashMap<K, V>]',
+      '[`Result<T, E>`]',
+      '![an image of it](./image.png)',
+      '[link](https://example.com/a-path?query=value#anchor "with a title")',
+      "[link](https://example.com 'with a title')",
+      '[link](https://example.com (with a title))',
+      '[link](<a path with spaces.md>)',
+      '[link]( crate::path )',
+    ];
+
+    for (const link of links) {
+      expect(tokenize(`see ${link} for more`), link).toEqual(['see', link, 'for', 'more']);
+      expect(tokenize(`(see ${link}), then`), link).toEqual(['(see', `${link}),`, 'then']);
+    }
+  });
+
+  it('pairs up the brackets and parentheses of a link like Markdown', () => {
+    for (const link of [
+      '[an [inner pair] of brackets](a::b)',
+      String.raw`[an escaped \] bracket](a::b)`,
+      String.raw`[an escaped \[ bracket][label one]`,
+      '[a code span `with ] in it` here]',
+      '[a call](crate::call(a, b) "a title")',
+      String.raw`[a paren](crate::call\) "a title")`,
+      '[a title](crate::a "with a ) in it")',
+      "[a title](crate::a 'with a ) in it')",
+      '[a path](<with a ) in it> "and a title")',
+    ]) {
+      expect(tokenize(`see ${link} for more`), link).toEqual(['see', link, 'for', 'more']);
+    }
+  });
+
+  it('gives the words of a link one space each, like the words around it, but keeps its code spans', () => {
+    expect(tokenize('a   [the   provider\tmodule](crate::a   "a   title")   b')).toEqual([
+      'a',
+      '[the provider module](crate::a "a title")',
+      'b',
+    ]);
+
+    expect(tokenize('[the  `a  b`  and  {c  d}  parts]')).toEqual(['[the `a  b` and {c  d} parts]']);
+    expect(tokenize('- [ ] an open task')).toEqual(['-', '[ ]', 'an', 'open', 'task']);
+  });
+
+  it('treats a bracket that never closes, or that a backslash escapes, as a regular character', () => {
+    expect(tokenize('the range [0, 1) and [a b]')).toEqual(['the', 'range', '[0,', '1)', 'and', '[a b]']);
+    expect(tokenize('a [ b [c d](e) f')).toEqual(['a', '[', 'b', '[c d](e)', 'f']);
+
+    expect(tokenize(String.raw`an escaped \[a b\] pair`)).toEqual([
+      'an',
+      'escaped',
+      String.raw`\[a`,
+      String.raw`b\]`,
+      'pair',
+    ]);
+
+    expect(tokenize(String.raw`a backslash \\[a b] before`)).toEqual(['a', 'backslash', String.raw`\\[a b]`, 'before']);
+    expect(tokenize('a [code `span ] that` goes on')).toEqual(['a', '[code', '`span ] that`', 'goes', 'on']);
+  });
+
+  it('keeps whichever of a link and a `{...}` group starts first', () => {
+    // a brace is no syntax in Markdown, so one in the text of a link never hides the end of the link
+    expect(tokenize('see [a {b c](d) and } more')).toEqual(['see', '[a {b c](d)', 'and', '}', 'more']);
+    expect(tokenize('see [a {b  c} d](e) more')).toEqual(['see', '[a {b  c} d](e)', 'more']);
+    expect(tokenize('see {@link Foo | [a b} c] more')).toEqual(['see', '{@link Foo | [a b}', 'c]', 'more']);
+  });
+
+  it('only joins a destination or label that comes right after the text of a link', () => {
+    expect(tokenize('[a b] (c d) [e f] [g h]')).toEqual(['[a b]', '(c', 'd)', '[e f]', '[g h]']);
+    expect(tokenize('[a b](c d and more')).toEqual(['[a b](c', 'd', 'and', 'more']);
+    expect(tokenize('items[i + 1](a, b) and [x]: y z')).toEqual(['items[i + 1](a, b)', 'and', '[x]:', 'y', 'z']);
+  });
 });
 
 describe('wrapTokens', () => {
@@ -140,6 +217,36 @@ describe('wrapTokens', () => {
 
   it('keeps a block-starting word at the start when no earlier word can move with it', () => {
     expect(wrap('aaaaaaaaa - b', 9)).toEqual(['aaaaaaaaa', '- b']);
+  });
+
+  it('never breaks a line inside a link, however narrow the lines are', () => {
+    const links = [
+      '[the provider module][`provider`]',
+      '[a link to an anchor](crate::Provider#method.reads)',
+      '[HashMap<K, V>]',
+      '[link](https://example.com/a-path "with a title")',
+    ];
+
+    const text = `See ${links[0]} for the rest. A ${links[1]} also resolves, and so do ${links[2]} and a ${links[3]} here.`;
+
+    for (let limit = 1; limit <= 120; limit += 1) {
+      for (const avoidSentenceOrphans of [true, false]) {
+        const wrapped = wrap(text, limit, { avoidSentenceOrphans });
+
+        for (const link of links) {
+          expect(
+            wrapped.filter((line) => line.includes(link)),
+            `${link} at ${limit}`,
+          ).toHaveLength(1);
+        }
+
+        expect(wrapped.join(' ')).toBe(text);
+      }
+    }
+
+    // a link that no longer fits after the words before it moves to the next line as a whole
+    expect(wrap(text, 37)[0]).toBe('See [the provider module][`provider`]');
+    expect(wrap(text, 36).slice(0, 2)).toEqual(['See', '[the provider module][`provider`]']);
   });
 });
 

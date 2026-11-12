@@ -7,5 +7,5 @@ export default defineConfig({
    * Ignores intentional rule violations used by the rule-ownership test, and source snapshots that
    * eval runs write verbatim.
    */
-  ignorePatterns: ['src/configs/__tests__/fixtures/violations', 'evals/runs'],
+  ignorePatterns: ['src/configs/__tests__/fixtures/violations'],
 });

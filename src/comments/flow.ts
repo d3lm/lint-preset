@@ -127,6 +127,12 @@ function needsAgent(comment: CommentReport): boolean {
   );
 }
 
+const SELECTORS: Record<AgentScope, (comment: CommentReport) => boolean> = {
+  suspicious: needsAgent,
+  failing: hasVerdictIssues,
+  all: () => true,
+};
+
 function seconds(milliseconds: number): string {
   return `${Math.round(milliseconds / 1000)}s`;
 }
@@ -332,12 +338,11 @@ export async function runFlow(project: Project, scope: Scope, options: FlowOptio
     };
   }
 
+  const select = SELECTORS[options.select];
+
   const pending = analyses
     .map((analysis) => {
-      const selected =
-        options.select === 'all' ? analysis.comments : analysis.comments.filter((comment) => needsAgent(comment));
-
-      return { ...analysis, comments: selected };
+      return { ...analysis, comments: analysis.comments.filter((comment) => select(comment)) };
     })
     .filter((analysis) => analysis.comments.length > 0);
 

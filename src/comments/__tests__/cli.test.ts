@@ -110,11 +110,15 @@ describe('check', () => {
     expect(stderr).toContain('1 comment(s) with layout issues');
   });
 
-  it('never checks line comments', async () => {
-    const { code, stdout } = await run('check', `// ${overflowing.replace(' and ', '; ')}\nexport const a = 1;\n`);
+  it('only checks line comments for lines past the maximum', async () => {
+    const pastWidth = await run('check', `// ${'word '.repeat(20).trim()}; and more\nexport const a = 1;\n`);
+    const pastMaximum = await run('check', `// ${overflowing.replace(' and ', '; ')}\nexport const a = 1;\n`);
 
-    expect(code).toBe(0);
-    expect(stdout).toBe('');
+    expect(pastWidth.code).toBe(0);
+    expect(pastWidth.stdout).toBe('');
+    expect(pastMaximum.code).toBe(1);
+    expect(pastMaximum.stdout).toContain('a.ts:1 line, width 80, suspicious: overflow, maximum 120');
+    expect(pastMaximum.stdout).not.toContain('semicolon');
   });
 
   it('exits with 0 when a comment only has hints that used to be verdicts', async () => {
@@ -162,6 +166,55 @@ describe('list', () => {
       ['overflow', 'verdict'],
       ['semicolon', 'hint'],
     ]);
+  });
+});
+
+describe('agent', () => {
+  it('rejects more than one of the flags that select comments', async () => {
+    for (const flags of [
+      ['--failing', '--all'],
+      ['--suspicious', '--failing'],
+    ]) {
+      await expect(run('agent', verdict, '--no-interactive', ...flags)).rejects.toThrow(
+        'comments: pass only one of --suspicious, --failing, and --all',
+      );
+    }
+  });
+
+  it('accepts failing as the scope in the config file', async () => {
+    writeFileSync(
+      path.join(directory, '.commentsrc.json'),
+      JSON.stringify({ agent: { scope: 'failing', command: [process.execPath, '-e', 'process.stdin.resume()'] } }),
+    );
+
+    const { code, stderr } = await run('agent', `${hintOnly}${verdict}`, '--no-interactive');
+
+    expect(code).toBe(0);
+    expect(stderr).toContain('for 1 comment(s) in 1 file(s)');
+  });
+});
+
+describe('--include and --ignore', () => {
+  it('replace the include globs of the config file and add to its ignore globs', async () => {
+    writeFileSync(
+      path.join(directory, '.commentsrc.json'),
+      JSON.stringify({ include: ['a.ts', 'b.ts'], ignore: ['c.ts'] }),
+    );
+
+    for (const file of ['a.ts', 'b.ts', 'c.ts', 'd.ts']) {
+      writeFileSync(path.join(directory, file), verdict);
+    }
+
+    const filesListed = async (...flags: string[]) => {
+      const { stdout } = await capture(['list', '.', '--cwd', directory, '--json', ...flags]);
+
+      return (JSON.parse(stdout) as { file: string }[]).map((comment) => comment.file);
+    };
+
+    expect(await filesListed()).toEqual(['a.ts', 'b.ts']);
+    expect(await filesListed('--include', '*.ts')).toEqual(['a.ts', 'b.ts', 'd.ts']);
+    expect(await filesListed('--include', 'c.ts', '--include', 'd.ts')).toEqual(['d.ts']);
+    expect(await filesListed('--ignore', 'b.ts')).toEqual(['a.ts']);
   });
 });
 

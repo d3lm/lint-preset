@@ -7,7 +7,7 @@ import { analyzeSource } from '../analyze.js';
 import { loadConfig, PrettierOptionsResolver, type CommentsConfig } from '../config.js';
 import { batchFiles, createLogReporter, describeSummary, runFlow } from '../flow.js';
 import { parseUnifiedDiff } from '../git.js';
-import { Project } from '../project.js';
+import { Project, type Scope } from '../project.js';
 
 let directory: string;
 
@@ -151,6 +151,31 @@ describe('Project', () => {
     expect(lines[0].comments.map((comment) => comment.startLine)).toEqual([7]);
     expect(whole[0].comments.map((comment) => comment.startLine)).toEqual([1, 7]);
   });
+
+  it('only considers files that match `include` in every scope, and still skips files that match `ignore`', async () => {
+    const files = ['a.ts', 'src/b.ts', 'src/generated/c.ts'];
+
+    mkdirSync(path.join(directory, 'src', 'generated'), { recursive: true });
+    initRepo(Object.fromEntries(files.map((file) => [file, '/**\n * x\n * y\n */\n'])));
+
+    for (const file of files) {
+      writeFileSync(path.join(directory, file), '/**\n * edited\n * y\n */\n');
+    }
+
+    const filesIn = async (config: CommentsConfig, scope: Scope) => {
+      const analyses = await createProject(config).analyze(scope);
+
+      return analyses.map((analysis) => analysis.file);
+    };
+
+    const config = { include: ['src/**'], ignore: ['src/generated/**'] };
+
+    expect(await filesIn({}, { repo: true })).toEqual(files);
+    expect(await filesIn(config, { repo: true })).toEqual(['src/b.ts']);
+    expect(await filesIn(config, {})).toEqual(['src/b.ts']);
+    expect(await filesIn(config, { targets: ['.'] })).toEqual(['src/b.ts']);
+    expect(await filesIn(config, { targets: ['a.ts', 'src/generated/c.ts:1'] })).toEqual([]);
+  });
 });
 
 describe('PrettierOptionsResolver', () => {
@@ -230,6 +255,8 @@ describe('loadConfig', () => {
       [{ agent: { timeout: 0 } }, 'agent.timeout'],
       [{ agent: { command: ['agent', 1] } }, 'agent.command'],
       [{ agent: { args: [true] } }, 'agent.args'],
+      [{ include: [1] }, 'include'],
+      [{ include: 'src/**' }, 'include'],
       [{ ignore: [1] }, 'ignore'],
       [{ extensions: [null] }, 'extensions'],
     ];
@@ -425,6 +452,25 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('Fix those notes by hand');
     expect(prompt).toContain('box drawings, hard line breaks, and other intentional layout in them exactly');
     expect(prompt).toContain('If a note can only be fixed by changing those, leave it');
+  });
+
+  it('asks for a line comment past the maximum to be shortened or turned into a block comment', () => {
+    const comments = analyzeSource(`  // ${'word '.repeat(20).trim()}\n`, 'src/a.ts', {
+      width: 60,
+      maxWidth: 80,
+      tabWidth: 2,
+      tolerance: 0,
+      avoidSentenceOrphans: true,
+      style: true,
+    });
+
+    const prompt = buildPrompt({ rules: DEFAULT_RULES, root: '/repo', comments });
+
+    expect(prompt).toContain('- line 1 is 104 columns, over the maximum of 80');
+    expect(prompt).toContain('- lines 1-1 are kept as written (line comment)');
+    expect(prompt).toContain('shorten the wording so the comment fits on its line and still says the same thing');
+    expect(prompt).toContain('turn it into a multi-line block comment instead: `/**` in JavaScript and TypeScript');
+    expect(prompt).toContain('except to turn a line comment that is too long into a block comment');
   });
 
   it('reviews comments without notes instead of telling the agent to leave them', () => {
@@ -835,6 +881,30 @@ describe('runFlow', () => {
 
     expect(summary.sentToAgent).toBe(1);
     expect(readFileSync(path.join(directory, 'prompt.txt'), 'utf8')).toContain('no measured issues');
+  });
+
+  it('hands only the comments with verdicts to the agent when selecting failing, even ones the tool can rewrap', async () => {
+    const hinted = '/**\n * Opens it; closes it later.\n */\nexport const a = 1;\n';
+    const underfilled = '/**\n * Opens it and closes\n * it later.\n */\nexport const a = 1;\n';
+
+    initRepo({ 'a.ts': 'export const a = 1;\n', 'b.ts': 'export const a = 1;\n' });
+    writeFileSync(path.join(directory, 'a.ts'), hinted);
+    writeFileSync(path.join(directory, 'b.ts'), underfilled);
+
+    const agent = writeAgent(["writeFileSync('prompt.txt', readFileSync(0, 'utf8'));"]);
+
+    const summary = await runFlow(
+      createProject({ agent: { command: [process.execPath, agent] } }),
+      {},
+      { ...options, mode: 'agent', select: 'failing' },
+    );
+
+    const prompt = readFileSync(path.join(directory, 'prompt.txt'), 'utf8');
+
+    expect(summary).toMatchObject({ sentToAgent: 1, rewrapped: 1, remaining: [] });
+    expect(prompt).toContain('### b.ts:1-4');
+    expect(prompt).not.toContain('### a.ts');
+    expect(readFileSync(path.join(directory, 'a.ts'), 'utf8')).toBe(hinted);
   });
 
   it('hands a comment with an issue the tool can never rewrap to the agent, but leaves fixable ones to the tool', async () => {

@@ -27,7 +27,7 @@ import { isLiveTerminal, TerminalUI } from './terminal.js';
 const HELP = `
 Usage: comments <command> [targets...] [options]
 
-Finds comments in JavaScript and TypeScript files and measures how their prose fits the configured width.
+Finds comments in JavaScript, TypeScript, and Rust files and measures how their prose fits the configured width.
 Only agent and hook change files, by applying the exact rewrap to comments that still have layout issues.
 
 Commands:
@@ -47,6 +47,7 @@ Options:
   --suspicious      Only comments with layout issues (overflow, early line ends, last lines of one or two words)
                     or hints (possible orphans, em-dashes, banners, ...). For agent and hook (the default), only
                     comments with hints or with issues in parts the tool never rewraps, a triage, not a full review
+  --failing         agent, hook: hand the agent only the comments that fail check, and none that only have hints
   --all             agent, hook: hand every comment in scope to the agent for a full review of its wording
   --verbose         agent, hook: print every agent's reply (otherwise a terminal offers to open them)
   --no-interactive  agent: show the agents while they run, then exit without offering to open their replies
@@ -68,7 +69,8 @@ Config overrides (take precedence over the config file):
                           with a sentence when the second is no longer than the first (default: on)
   --[no-]style            Look for possible semicolons, em-dashes, dashes, label colons, emphasis, and banners
                           as hints (default: on). The agent's rules apply either way
-  --ignore <glob>         Skip matching files, repeatable
+  --include <glob>        Only consider matching files, repeatable. Replaces include from the config file
+  --ignore <glob>         Skip matching files, repeatable. Adds to ignore from the config file
   --model <name>          agent, hook: model for the agent
   --timeout <seconds>     agent, hook: how long to wait for each agent (default: 300)
   --batch-size <n>        agent, hook: most comments per agent (default: 20)
@@ -84,6 +86,7 @@ const OPTIONS = {
   tolerance: { type: 'string' },
   orphans: { type: 'boolean' },
   style: { type: 'boolean' },
+  include: { type: 'string', multiple: true },
   ignore: { type: 'string', multiple: true },
   model: { type: 'string' },
   timeout: { type: 'string' },
@@ -95,6 +98,7 @@ const OPTIONS = {
   'whole-files': { type: 'boolean' },
   repo: { type: 'boolean' },
   suspicious: { type: 'boolean' },
+  failing: { type: 'boolean' },
   all: { type: 'boolean' },
   verbose: { type: 'boolean' },
   interactive: { type: 'boolean' },
@@ -180,6 +184,7 @@ function applyOverrides(config: CommentsConfig, values: Values): CommentsConfig 
     tolerance: parseInteger('tolerance', values.tolerance, 0),
     avoidSentenceOrphans: values.orphans,
     style: values.style,
+    include: values.include,
     ignore: values.ignore ? [...(config.ignore ?? []), ...values.ignore] : undefined,
   });
 
@@ -210,11 +215,13 @@ function scopeFrom(positionals: readonly string[], values: Values): Scope {
 }
 
 function selectFrom(values: Values, project: Project): AgentScope {
-  if (values.all) {
-    return 'all';
+  const flags = (['suspicious', 'failing', 'all'] as const).filter((scope) => values[scope]);
+
+  if (flags.length > 1) {
+    throw new Error('comments: pass only one of --suspicious, --failing, and --all');
   }
 
-  return values.suspicious ? 'suspicious' : (project.config.agent?.scope ?? 'suspicious');
+  return flags.at(0) ?? project.config.agent?.scope ?? 'suspicious';
 }
 
 function formatIssue(issue: IssueReport): string {
@@ -285,7 +292,7 @@ function hintEmptyScope(analyses: readonly FileAnalysis[], scope: Scope): void {
 
   if (analyses.length === 0 && isDefaultScope) {
     log(
-      'comments: no uncommitted changes in JavaScript or TypeScript files. Pass --repo, --base <ref>, or files to widen the scope.',
+      'comments: no uncommitted changes in JavaScript, TypeScript, or Rust files. Pass --repo, --base <ref>, or files to widen the scope.',
     );
   }
 }

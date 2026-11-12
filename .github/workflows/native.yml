@@ -1,0 +1,65 @@
+name: Native
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_call:
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # keep in sync with `targets` in native/napi.json, which `prepublishOnly` checks
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            runner: macos-26-intel
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            flags: --use-napi-cross
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            flags: --use-napi-cross
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .tool-versions
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--use-napi-cross` links against glibc 2.17, so the addon loads on older distributions too
+      - run: pnpm run build:native --target ${{ matrix.target }} ${{ matrix.flags }}
+
+      - name: Check the required glibc version
+        if: runner.os == 'Linux'
+        run: |
+          required="$(objdump -T native/comments.*.node | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+
+          echo "The addon requires $required"
+
+          if [ "$(printf '%s\n' "$required" GLIBC_2.17 | sort -V | tail -1)" != GLIBC_2.17 ]; then
+            echo "The addon requires a glibc newer than 2.17" >&2
+            exit 1
+          fi
+
+      - run: pnpm exec vitest run
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.target }}
+          path: native/*.node
+          if-no-files-found: error

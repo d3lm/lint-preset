@@ -1,0 +1,22 @@
+[package]
+name = "lint-preset-comments"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi4"] }
+napi-derive = "3"
+ra-ap-rustc_lexer = "0.180.0"
+ra_ap_syntax = "0.0.362"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

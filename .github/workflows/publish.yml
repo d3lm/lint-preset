@@ -6,7 +6,11 @@ on:
       - 'v*'
 
 jobs:
+  native:
+    uses: ./.github/workflows/native.yml
+
   publish:
+    needs: native
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -19,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .tool-versions
+
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Verify tag matches package version
         run: |
@@ -37,8 +43,14 @@ jobs:
 
       - run: pnpm lint
 
-      - run: pnpm test
+      # the native job already ran the tests on every target, with the addons that ship
+      - run: rm -f native/*.node
 
-      - run: pnpm build
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: native
+          merge-multiple: true
 
+      # `prepublishOnly` builds the JavaScript and checks that the addon of every target is in place
       - run: npm publish

@@ -8,6 +8,7 @@ import {
   rewrapComment,
   type AnalyzeOptions,
 } from '../analyze.js';
+import { randomComments } from './helpers/random-comments.js';
 
 const options: AnalyzeOptions = { width: 80, tabWidth: 2, tolerance: 0, avoidSentenceOrphans: true, style: true };
 
@@ -702,17 +703,115 @@ describe('analyzeSource', () => {
     expect(analyzeSource(source, 'file.ts', options).some((comment) => isSuspicious(comment))).toBe(false);
   });
 
-  it('never analyzes line comments', () => {
-    const source = stripIndent`
-      function run() {
-        // keep the cache warm
-        // so the first request does not pay for it; it's warm — when it arrives and the line is far too long
-        // ---------- Handlers ----------
-        return 1;
-      }
-    `;
+  describe('line comments', () => {
+    const settings = { ...options, width: 40, maxWidth: 60 };
 
-    expect(analyzeSource(source, 'file.ts', options)).toEqual([]);
+    function issuesOf(source: string, filename = 'file.ts'): string[] {
+      return analyzeSource(source, filename, settings).flatMap((comment) =>
+        comment.paragraphs.flatMap((paragraph) => paragraph.issues.map((issue) => `${issue.line}:${issue.type}`)),
+      );
+    }
+
+    it('only reports a line comment with a line past the maximum, as a verdict without hints or a suggestion', () => {
+      const source = stripIndent`
+        function run() {
+          // keep the cache warm; it's warm — past the width
+          // ---------- Handlers ----------
+          return 1;
+        }
+
+        // so the first request does not pay for it when it arrives, and this line is far too long
+        const a = 1;
+      `;
+
+      const comments = analyzeSource(source, 'file.ts', settings);
+
+      expect(comments.map((comment) => [comment.kind, comment.startLine, comment.endLine])).toEqual([['line', 7, 7]]);
+      expect(issuesOf(source)).toEqual(['7:overflow']);
+      expect(hasVerdictIssues(comments[0])).toBe(true);
+
+      expect(comments[0].paragraphs).toMatchObject([{ reflowable: false, reason: 'line comment', suggestion: null }]);
+      expect(rewrapComment(comments[0])).toBe(comments[0].text);
+    });
+
+    it('reads consecutive lines with the same indentation as one comment, measured with their own prefixes', () => {
+      const long = 'a line that goes on and on until it is well past the maximum';
+
+      const source = [
+        '// the first line of a run',
+        `// ${long}`,
+        '//',
+        `//${long}x`,
+        `/// ${long}`,
+        '  // other indentation',
+        '',
+        `// ${long}`,
+        'const a = 1;',
+        '',
+      ].join('\n');
+
+      const comments = analyzeSource(source, 'file.ts', settings);
+
+      expect(comments.map((comment) => [comment.startLine, comment.endLine])).toEqual([
+        [1, 5],
+        [8, 8],
+      ]);
+
+      expect(comments[0].paragraphs.map((paragraph) => [paragraph.startLine, paragraph.endLine])).toEqual([
+        [1, 2],
+        [4, 5],
+      ]);
+
+      expect(comments[0].paragraphs[1].issues.map((issue) => [issue.line, issue.length])).toEqual([
+        [4, 63],
+        [5, 64],
+      ]);
+
+      expect(issuesOf(source)).toEqual(['2:overflow', '4:overflow', '5:overflow', '8:overflow']);
+    });
+
+    it('never reports code, directives, legal text, layout, ignored comments, or trailing comments', () => {
+      const long = 'far too long for the maximum width of a comment line';
+
+      const source = [
+        `// eslint-disable-next-line no-console -- ${long}`,
+        `// @ts-expect-error ${long}`,
+        '/// <reference path="./a/very/long/path/to/some/declarations/file.d.ts" />',
+        '',
+        `//! Copyright (c) 2024 ${long}`,
+        '',
+        '// const value = compute(firstArgument, secondArgument, thirdArgument);',
+        '',
+        `// | option | meaning that is ${long} |`,
+        '// | ------ | ------- |',
+        '',
+        `// comments-ignore: ${long}`,
+        '',
+        `const a = 1; // ${long}`,
+        '',
+      ].join('\n');
+
+      expect(analyzeSource(source, 'file.ts', settings)).toEqual([]);
+    });
+
+    it('reports an overflow in text that only looks like code or hand layout', () => {
+      const source = [
+        '// a line that ends with a brace, which may be code but is prose here {',
+        '// # a heading that is long enough to be past the maximum width',
+        'const a = 1;',
+        '',
+      ].join('\n');
+
+      expect(issuesOf(source)).toEqual(['1:overflow', '2:overflow']);
+    });
+
+    it('measures a line comment against the width and tolerance without a maximum', () => {
+      const source = `// ${'word '.repeat(9)}end\n// https://example.com/${'a'.repeat(40)}\nconst a = 1;\n`;
+
+      expect(analyzeSource(source, 'file.ts', { ...options, width: 40, tolerance: 5 })).toMatchObject([
+        { kind: 'line', paragraphs: [{ issues: [{ type: 'overflow', line: 1 }] }] },
+      ]);
+    });
   });
 
   it('rewraps list items with a hanging indent', () => {
@@ -1997,126 +2096,6 @@ describe('analyzeSource false positives', () => {
   });
 });
 
-/**
- * Generates comments from words, sentence ends, long words, and words that start a block when they
- * begin a line. `extra` adds more words that can end up anywhere on a line.
- */
-function randomComments(initialSeed: number, extra: readonly string[] = []) {
-  let seed = initialSeed;
-
-  // the constants are those of the Park-Miller generator
-  const random = (): number => {
-    seed = (seed * 16_807) % 2_147_483_647;
-
-    return (seed - 1) / 2_147_483_646;
-  };
-
-  const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)];
-  const between = (low: number, high: number): number => low + Math.floor(random() * (high - low + 1));
-
-  const words = ['the', 'request', 'socket', 'closes', 'a', 'of', 'it', 'returns', 'config', 'width', 'lines'];
-
-  const ends = [
-    'done.',
-    'here.',
-    'stops!',
-    'why?',
-    'first,',
-    'then,',
-    'e.g.',
-    'i.e.',
-    'etc.',
-    'vs.',
-    '(the',
-    '(see',
-    ...extra,
-  ];
-
-  const starts = [
-    '@types/node',
-    '@param',
-    '-',
-    '*',
-    '+',
-    '1.',
-    '2)',
-    '#',
-    '>',
-    '<div>',
-    '```',
-    '~~~',
-    'eslint-disable',
-    'prettier-ignore',
-  ];
-
-  const token = (): string => {
-    const roll = random();
-
-    if (roll < 0.6) {
-      return pick(words);
-    }
-
-    if (roll < 0.78) {
-      return pick(ends);
-    }
-
-    if (roll < 0.92) {
-      return pick(starts);
-    }
-
-    return roll < 0.96 ? `\`${'x'.repeat(between(4, 90))}\`` : `https://example.com/${'a'.repeat(between(4, 90))}`;
-  };
-
-  const lines = (count: number): string[][] => {
-    const result: string[][] = [[pick(words)]];
-
-    for (let index = 1; index < count; index += 1) {
-      const next = token();
-
-      if (random() < 0.25 && !starts.includes(next)) {
-        result.push([next]);
-      } else {
-        result.at(-1)?.push(next);
-      }
-    }
-
-    return result;
-  };
-
-  const paragraph = (): string[] => {
-    const roll = random();
-    const body = lines(between(1, 30));
-
-    if (roll < 0.5) {
-      return body.map((line) => line.join(' '));
-    }
-
-    if (roll < 0.7) {
-      return body.map((line, index) => `${index === 0 ? '- ' : '  '}${line.join(' ')}`);
-    }
-
-    if (roll < 0.85) {
-      return body.map((line, index) => `${index === 0 ? '@param name - ' : ''}${line.join(' ')}`);
-    }
-
-    return pick([
-      ['| a | b |', '| - | - |'],
-      ['```ts', 'const a = 1;', '```'],
-      ['┌──┐', '└──┘'],
-    ]);
-  };
-
-  const comment = (): string => {
-    const indent = pick(['', '  ', '\t']);
-    const paragraphs = Array.from({ length: between(1, 3) }, paragraph);
-    const body = paragraphs.flatMap((lines, index) => (index === 0 ? lines : ['', ...lines]));
-
-    return `${indent}/**\n${body.map((line) => `${indent} *${line ? ` ${line}` : ''}`).join('\n')}\n${indent} */\n`;
-  };
-
-  return { random, between, comment };
-}
-
 // the text of a comment line without its prefix, indentation, and list marker
 function textLength(line: string): number {
   return line.replace(/^\s*\*\s*(?:(?:[-*+]|\d+[.)])\s+)?/, '').length;
@@ -2271,6 +2250,54 @@ describe('rewrap invariants', () => {
       );
     });
 
+    it('keeps a link that continues on the next line when it is too long for one line', () => {
+      const source = jsdoc(
+        'See [the guide to wrapping comments, which also covers lists, tables, and code',
+        'blocks](https://example.com/guides/wrapping-comments#lists-tables-and-code-blocks) first.',
+      );
+
+      expect(kept(source)).toEqual({ reason: 'unbreakable text across lines', issues: [] });
+    });
+
+    it('joins a link that continues on the next line when it fits on one', () => {
+      const text = jsdoc('See [the guide to', 'wrapping](https://example.com/guide) for every option.');
+      const label = jsdoc('See [the guide to wrapping][the', 'guide] or [the list of', 'options] for more.');
+
+      expect(fix(text, settings)).toBe(
+        jsdoc('See [the guide to wrapping](https://example.com/guide) for every option.'),
+      );
+
+      expect(fix(label, settings)).toBe(
+        jsdoc('See [the guide to wrapping][the guide] or [the list of options] for more.'),
+      );
+    });
+
+    it('never ends a line inside a link at any width', () => {
+      const links = [
+        '[the guide to wrapping comments](https://example.com/guide)',
+        '[the reference of the config file][reference]',
+        '[an array of options]',
+      ];
+
+      const source = jsdoc(
+        `The options are described in ${links[0]}, and the defaults are listed in ${links[1]} with examples, or in ${links[2]} for each of them.`,
+      );
+
+      for (let width = 30; width <= 120; width += 1) {
+        const narrow = { width, maxWidth: width + 20 };
+        const fixed = fix(source, narrow);
+
+        for (const link of links) {
+          expect(
+            fixed.split('\n').filter((line) => line.includes(link)),
+            `${link} at ${width}\n${fixed}`,
+          ).toHaveLength(1);
+        }
+
+        expect(fix(fixed, narrow), `width ${width}`).toBe(fixed);
+      }
+    });
+
     it('keeps prose whose stray backtick or brace pairs up with one that is lines away', () => {
       const backtick = jsdoc(
         'The `foo option controls the size of the buffer, and when it is not set the',
@@ -2387,7 +2414,9 @@ describe('rewrap invariants', () => {
 
   it('holds with a hard maximum, and never adds a line that is longer than it', () => {
     // words that read as code at the start or end of a line, and delimiters that pair up across lines
-    const { random, between, comment } = randomComments(7919, ['thus;', 'f();', '(one)', 'b)', ')', '{', '}', '`']);
+    const { random, between, comment } = randomComments(7919, {
+      extra: ['thus;', 'f();', '(one)', 'b)', ')', '{', '}', '`'],
+    });
 
     let checked = 0;
 
@@ -2421,7 +2450,7 @@ describe('rewrap invariants', () => {
   });
 
   it('has no verdict for the layout for any width within the tolerance, and keeps it as it is', () => {
-    const { random, between, comment } = randomComments(4099, ['(one)', 'b)']);
+    const { random, between, comment } = randomComments(4099, { extra: ['(one)', 'b)'] });
 
     // a hint may stay, and a word that is too long for a line on its own stays an overflow
     const NO_VERDICT = /:(?:orphan|split-parenthetical|overflow)$/;
@@ -2841,6 +2870,59 @@ describe('issue tiers', () => {
 
       expect(issuesOf(source, { width: 80, maxWidth: 120 })).toEqual(['2:split-parenthetical:hint']);
       expect(issuesOf(source, { width: 80 })).toEqual(['2:overflow:verdict']);
+    });
+  });
+
+  describe('a line that ends inside a link, a code span, or a `{...}` group', () => {
+    const issuesOf = (source: string, overrides: Partial<AnalyzeOptions> = {}): string[] => {
+      const [paragraph] = commentOf(source, overrides).paragraphs;
+
+      return paragraph.issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`);
+    };
+
+    it('is a verdict, since the rewrap keeps each of them on one line', () => {
+      const wide = { width: 100, maxWidth: 120 };
+
+      // the lines are as even as they get when a line may end inside a link
+      const source = jsdoc(
+        'Reads the options from the config file, which [the guide to wrapping',
+        'comments](https://example.com/guide) describes with an example for each of them.',
+      );
+
+      expect(issuesOf(source, wide)).toEqual(['2:unbalanced:verdict']);
+
+      expect(rewrapComment(commentOf(source, wide))).toBe(
+        jsdoc(
+          'Reads the options from the config file,',
+          'which [the guide to wrapping comments](https://example.com/guide)',
+          'describes with an example for each of them.',
+        ).trimEnd(),
+      );
+    });
+
+    it('is a verdict without a maximum too, where a paragraph with fewer lines than its rewrap has no other issue', () => {
+      const narrow = { width: 30 };
+
+      const sources = [
+        [
+          jsdoc('See [the docs on the', 'layout](a) for more of it.'),
+          jsdoc('See', '[the docs on the layout](a)', 'for more of it.'),
+        ],
+        [
+          jsdoc('Run `the build with the', 'flag` to see more of it.'),
+          jsdoc('Run', '`the build with the flag`', 'to see more of it.'),
+        ],
+        [
+          jsdoc('See {@link Layout the docs', 'on} for more of it.'),
+          jsdoc('See', '{@link Layout the docs on}', 'for more of it.'),
+        ],
+      ];
+
+      for (const [source, rewrapped] of sources) {
+        expect(issuesOf(source, narrow), source).toEqual(['2:unbalanced:verdict']);
+        expect(fix(source, narrow), source).toBe(rewrapped);
+        expect(issuesOf(rewrapped, narrow), source).toEqual([]);
+      }
     });
   });
 

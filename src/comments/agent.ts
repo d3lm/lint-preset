@@ -17,7 +17,7 @@ export const DEFAULT_RULES = `
 
 When rules pull in different directions, the earlier one wins.
 
-1. Keep code and exact text byte for byte, including every punctuation character in it. That covers code blocks, \`@example\`, code spans, identifiers, string literals like error messages, regexes, globs and other patterns like \`*test*\`, URLs, quoted text, titles, and notation like \`host:port\`.
+1. Keep code and exact text byte for byte, including every punctuation character in it. That covers code blocks, \`@example\`, code spans, identifiers, string literals like error messages, regexes, globs and other patterns like \`*test*\`, URLs, quoted text, titles, notation like \`host:port\`, and Rust intra-doc links (see below).
 2. Keep the meaning. An edit may make a comment clearer, never different.
 3. Follow the style preferences below.
 4. Change as little as possible. Wording that already reads clearly stays, even when a note points at it.
@@ -30,10 +30,12 @@ When rules pull in different directions, the earlier one wins.
 - A comment whose whole text is one paragraph stays on a single line when that line fits a separate, larger single-line width, even past the width. Only a longer comment wraps to the width.
 - Separate paragraphs with an empty comment line.
 - Never split a backtick code span across lines.
+- Never split a Markdown link across lines. A link is the text in brackets and the target right after it, like \`[the docs](https://example.com)\`, \`[the docs][label]\`, or \`[the docs]\`, and all of it stays on one line, from its first bracket to its last bracket or parenthesis. An editor can't follow a link that continues on the next line. When a line is too long, break it before or after the link.
 - Keep code blocks, \`@example\`, lists, tables, box drawings, aligned columns, and Markdown hard line breaks (a line that ends with two spaces or a backslash) laid out as they are. List items wrap with their continuation lines indented to the item text, and a JSDoc tag description that doesn't fit continues on the next line without indentation.
 - The tool measures every line, taking the tolerance and the parts it keeps as written into account, and the notes on each comment list what is still wrong. Act on those notes. Don't count columns, and don't apply a stricter limit than the notes show.
 - The maximum is a hard limit for measured prose, including long tokens. If a URL, code span, or other exact text exceeds it, preserve that text and explain the unresolved overflow instead of changing its contents.
 - The tool never rewraps the parts it keeps as written, like a single-line block comment, a paragraph with hard line breaks, or lines that may be laid out by hand. When a note says one of their prose lines is too long, break or shorten it yourself. Exact text and intentional layout win over the width, so keep code, code spans, and the layout in them intact, and if a note can only be fixed by changing them, leave it and say why in your reply.
+- The tool never rewraps a line comment (\`//\`) either. When a note says one of its lines is too long, shorten the wording so the comment fits on its line and still says the same thing. When it can't be shortened without losing meaning, turn it into a multi-line block comment instead: \`/**\` in JavaScript and TypeScript, or \`/*\` in Rust, on its own line, then the text on lines that start with \` * \`, then \` */\` on its own line, all at the indentation of the line comment. Like other block comments, it starts with a capital letter and ends with punctuation. Leave its line breaks to the tool, which rewraps it like any other block comment. Never split a line comment into more \`//\` lines.
 
 ## Style
 
@@ -44,8 +46,16 @@ These are preferences for comment prose. They never apply to code or exact text 
 - Prefer a sentence over a "Label: explanation" fragment, like \`...the socket. Optional: without it...\` or \`Default: refuse\` in the middle of prose. A colon is fine where it introduces a list, code block, or example, in a term's definition, in notation, in a quotation, and in a \`Note:\` or \`Optional:\` that starts a comment. A JSDoc tag like \`@note\` or \`@todo\` can replace a label, and \`@default\` fits a default value, not a description.
 - Avoid asterisk emphasis like \`*this*\`, and use plain wording instead. A name or pattern in asterisks, like \`*test*\` or \`*.spec.ts\`, is a pattern, so keep its asterisks and wrap it in a code span, like \`\` \`*test*\` \`\`.
 - Avoid section banner comments, i.e. dividers or headings made of dashes, equals signs, asterisks, or other repeated characters that split a file into visual sections. Let the code structure carry the grouping, or write one short, plain sentence comment (e.g. \`// handlers for control mode\`). Rules that belong to a diagram, a table, a box drawing, a Markdown document, an example, or a legal header aren't banners.
-- Block and JSDoc comments are capitalized and end with punctuation.
-- Never turn a block or JSDoc comment into \`//\` line comments, and never write a run of consecutive \`//\` lines.
+- Block, JSDoc, and Rust doc comments are capitalized and end with punctuation.
+- Never change the kind of a comment, except to turn a line comment that is too long into a block comment (see Layout). Don't turn a block or JSDoc comment into \`//\` line comments, and never write a run of consecutive \`//\` lines. In Rust, a run of \`///\` or \`//!\` lines is one doc comment, so keep its markers, and never turn a doc comment (\`///\`, \`//!\`, \`/**\`, \`/*!\`) into another kind, since that changes or removes documentation.
+
+## Rust doc comments
+
+Rust doc comments are Markdown that rustdoc renders.
+
+- Intra-doc links are exact text. Keep their brackets, backticks, and targets, like \`\` [\`count_provider_reads\`] \`\`, \`\` [\`permissions\`](crate::permissions) \`\`, \`\` [the parser][\`Parser\`] \`\`, or \`[Vec<T>]\`, since rustdoc resolves the text in brackets, or the target after it, as a path. Each link stays on one line (see Layout), including a link with spaces in its text, like \`[the provider module](crate::provider)\`.
+- A link reference definition, like \`\` [\`Foo\`]: crate::Foo \`\`, stays on its own line as it is. Its colon is syntax, not a label.
+- Headings like \`# Examples\`, \`# Panics\`, \`# Errors\`, and \`# Safety\` are sections that rustdoc and readers look for, so keep them. Code blocks are doctests, so keep their lines, including hidden lines that start with \`#\`, exactly as they are.
 
 ## Editing
 
@@ -89,7 +99,8 @@ export interface AgentResult {
 const ISSUE_DESCRIPTIONS: Record<Exclude<IssueType, 'overflow'>, string> = {
   underfill: 'ends early, and words from the next line fit on it',
   widow: 'leaves fewer than three words on the last line of its paragraph',
-  unbalanced: 'is in a paragraph whose lines are less even than the suggested rewrap',
+  unbalanced:
+    'is in a paragraph whose lines are less even than the suggested rewrap, or that splits a link or code span that the rewrap keeps on one line',
   orphan:
     'may end with the start of a new sentence, clause, or parenthetical, which belongs on the next line (leave it if the period or comma before it is part of an abbreviation, a name, or notation like `No. 3`, or if it is a long word like an identifier and moving it would leave the line far shorter than the lines around it)',
   'split-parenthetical':
@@ -101,7 +112,7 @@ const ISSUE_DESCRIPTIONS: Record<Exclude<IssueType, 'overflow'>, string> = {
   semicolon:
     "may join clauses with a semicolon (leave it if it's code, a literal, not a clause join, or reads more clearly than a period or a joining word)",
   'label-colon':
-    'may use a colon after a label (leave it if it introduces a list or code, defines a term, is notation like a time or `key: value`, or is a `Note:` or `Optional:` that starts the comment)',
+    'may use a colon after a label (leave it if it introduces a list or code, defines a term or a link like `` [`Foo`]: crate::Foo ``, is notation like a time or `key: value`, or is a `Note:` or `Optional:` that starts the comment)',
   emphasis:
     'may use asterisk emphasis (leave the asterisks of a name or pattern like `*test*`, which belongs in a code span with its asterisks)',
   dash: "may use a spaced hyphen, en-dash, or double hyphen as an em-dash (leave it if it's a range, a CLI argument, arithmetic, code, a term's definition, or reads more clearly than the alternatives)",
@@ -150,7 +161,7 @@ function describeComment(comment: CommentReport): string {
     '',
     ...(notes.length > 0 ? notes.map((note) => `- ${note}`) : ['- no measured issues; review the wording and flow']),
     '',
-    `${fence}ts`,
+    `${fence}${comment.file.endsWith('.rs') ? 'rust' : 'ts'}`,
     comment.text,
     fence,
   ].join('\n');

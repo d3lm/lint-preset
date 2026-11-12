@@ -1,4 +1,5 @@
 import { parseSync, type OxcError, type Statement } from 'oxc-parser';
+import { isRustCode, rustFingerprint, scanRust } from './rust.js';
 import {
   CODE_SPAN,
   findStyleIssues,
@@ -23,7 +24,19 @@ import {
   type WrapOptions,
 } from './wrap.js';
 
-export type CommentKind = 'jsdoc' | 'block';
+/**
+ * Describes the syntax of a comment. Rust has doc comments for the item after them (`outer`, like `///` and `/**`)
+ * and for the item that holds them (`inner`, like `//!` and `/*!`). A `line` comment is a run of plain line comments
+ * (`//`), which is never rewrapped.
+ */
+export type CommentKind =
+  | 'jsdoc'
+  | 'block'
+  | 'line'
+  | 'outer-line-doc'
+  | 'inner-line-doc'
+  | 'outer-block-doc'
+  | 'inner-block-doc';
 
 export type ParagraphKind = 'prose' | 'list' | 'tag' | 'code' | 'other';
 
@@ -162,9 +175,45 @@ interface RawParagraph {
 
 interface ParsedComment {
   readonly type: 'Line' | 'Block';
+
+  /**
+   * Holds the text between the comment markers, like the `/ text` of `/// text`.
+   */
   readonly value: string;
   readonly start: number;
   readonly end: number;
+  readonly doc?: 'outer' | 'inner';
+}
+
+/**
+ * Holds what tells code, legal text, and directives apart in the comments of a language.
+ */
+interface Language {
+  readonly name: 'javascript' | 'rust';
+
+  /**
+   * Whether a whole paragraph parses as code of the language.
+   */
+  readonly isCode: (text: string) => boolean;
+
+  /**
+   * Whether a single line looks like code of the language. Prose can look like that too.
+   */
+  readonly isCodeLine: (text: string) => boolean;
+  readonly legal: RegExp;
+  readonly blockDirective?: RegExp;
+
+  /**
+   * Whether lines that start with `@`, like `@param`, are JSDoc tags.
+   */
+  readonly tags: boolean;
+
+  /**
+   * Whether a code span that continues on the next line may be joined into one line. rustdoc keeps
+   * and shows the spaces at the start of the next line inside the code span, and how many there are
+   * depends on every line of the item's docs, so Rust keeps such a paragraph as it is.
+   */
+  readonly joinsCodeSpans: boolean;
 }
 
 const IGNORE_DIRECTIVE = 'comments-ignore';
@@ -227,6 +276,12 @@ const BLOCK_DIRECTIVE = /^\s*(?:eslint\s|globals?\s|exported\s|jshint\s|jslint\s
  * copyright notice like `Copyright (c) 2020 Foo`.
  */
 const LEGAL_COMMENT = /^!|@license\b|@preserve\b|\bcopyright\s+(?:\(c\)|©|\d{4})/i;
+
+/**
+ * In Rust, `/*!` and `//!` start inner doc comments, so only the other markers make
+ * a comment legal.
+ */
+const RUST_LEGAL_COMMENT = /@license\b|@preserve\b|\bcopyright\s+(?:\(c\)|©|\d{4})/i;
 
 // a term of one or two words or a code span (stripped to two backticks), then a dash or colon and its definition
 const DEFINITION = /^(?:``|[\w$.[\]]+(?:[ -][\w$.[\]]+)?)(?: [-–]|:) \S/;
@@ -361,12 +416,10 @@ function parsesAsProperties(text: string): boolean {
 }
 
 /**
- * Prose almost never parses as JavaScript, since two words in a row are a syntax error.
+ * Prose almost never parses as code, since two words in a row are a syntax error.
  */
-function isCode(texts: readonly string[]): boolean {
-  const text = texts.map((line) => line.replace(LIST_MARKER, '')).join('\n');
-
-  return parsesAsStatements(text) || parsesAsProperties(text);
+function isCode(texts: readonly string[], language: Language): boolean {
+  return language.isCode(texts.map((line) => line.replace(LIST_MARKER, '')).join('\n'));
 }
 
 /**
@@ -377,10 +430,52 @@ function isCodeLine(text: string): boolean {
   return (
     text.endsWith('{') ||
     (text.endsWith(';') && (/[()[\]{}=<>]/.test(text) || !/\s/.test(text))) ||
-    /^[}\])]/.test(text) ||
-    /^(?:const|let|var)\s+[\w$]+\s*[:=]/.test(text) ||
-    /^(?:import|export)\s.*(?:\sfrom\s|[{}])/.test(text)
+    /^[}\])]/.test(text)
   );
+}
+
+const JAVASCRIPT: Language = {
+  name: 'javascript',
+  isCode: (text) => parsesAsStatements(text) || parsesAsProperties(text),
+  isCodeLine: (text) => {
+    return (
+      isCodeLine(text) ||
+      /^(?:const|let|var)\s+[\w$]+\s*[:=]/.test(text) ||
+      /^(?:import|export)\s.*(?:\sfrom\s|[{}])/.test(text)
+    );
+  },
+  legal: LEGAL_COMMENT,
+  blockDirective: BLOCK_DIRECTIVE,
+  tags: true,
+  joinsCodeSpans: true,
+};
+
+const RUST: Language = {
+  name: 'rust',
+  isCode: (text) => isRustCode(text),
+  isCodeLine: (text) => {
+    return (
+      isCodeLine(text) ||
+      /^let\s+(?:mut\s+)?\w+\s*[:=]/.test(text) ||
+      /^(?:pub(?:\([\w:\s]+\))?\s+)?(?:const|static(?:\s+mut)?)\s+[A-Z_\d]+\s*:/.test(text) ||
+      /^(?:pub(?:\([\w:\s]+\))?\s+)?use\s+[\w:]*::/.test(text) ||
+      /^#!?\[/.test(text)
+    );
+  },
+  legal: RUST_LEGAL_COMMENT,
+  tags: false,
+  joinsCodeSpans: false,
+};
+
+/**
+ * Whether a paragraph parses as JavaScript code, like the check for Rust code in `isRustCode`.
+ */
+export function isJavaScriptCode(text: string): boolean {
+  return JAVASCRIPT.isCode(text);
+}
+
+function languageOf(filename: string): Language {
+  return filename.endsWith('.rs') ? RUST : JAVASCRIPT;
 }
 
 function layoutReason(prose: string, raw: string): string | undefined {
@@ -400,13 +495,27 @@ function layoutReason(prose: string, raw: string): string | undefined {
   return undefined;
 }
 
+// a rule like `***`, `- - -`, or `___`
+const THEMATIC_BREAK = /^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/;
+
 /**
- * Headings, link definitions, HTML, and quotes are markup, since joining them with the next line
- * would turn them into prose. Prose can start a line like that too, like `<T> is the type` or
- * `# of retries`, so markup is only kept as written and still has to fit the width.
+ * Headings, link definitions, HTML, quotes, and rules are markup, since joining them with the
+ * next line would turn them into prose. That includes the start of a list item, like `- [x]: y`,
+ * a quote like `>=`, an HTML comment like `<!--`, and a line of only `=` or `-`, which underlines
+ * a heading. Prose can start a line like that too, like `<T> is the type` or `# of retries`,
+ * so markup is kept as written, but it still has to fit the width.
  */
 function isMarkup(prose: string): boolean {
-  return /^#{1,6}\s/.test(prose) || /^\[[^\]]+\]:/.test(prose) || /^<\/?[a-z]/i.test(prose) || /^>(?:\s|$)/.test(prose);
+  const text = prose.replace(LIST_MARKER, '');
+
+  return (
+    /^#{1,6}(?:\s|$)/.test(text) ||
+    /^\[[^\]]+\]:/.test(text) ||
+    /^<(?:\/?[a-z]|[!?])/i.test(text) ||
+    text.startsWith('>') ||
+    /^(?:=+|-+)$/.test(prose) ||
+    THEMATIC_BREAK.test(prose)
+  );
 }
 
 function mask(text: string): string {
@@ -447,7 +556,7 @@ function hasAlignedColumns(lines: readonly BodyLine[]): boolean {
   return false;
 }
 
-function structureOf(lines: readonly BodyLine[]): Structure | undefined {
+function structureOf(lines: readonly BodyLine[], language: Language): Structure | undefined {
   const trimmed = lines.map((line) => line.text.trim()).join('\n');
   const texts = replaceKeepingLines(trimmed, CODE_SPAN, '``').split('\n');
 
@@ -458,7 +567,12 @@ function structureOf(lines: readonly BodyLine[]): Structure | undefined {
   const proseLines = stripNonProse(trimmed).split('\n');
 
   // the parser only accepts a whole paragraph as code when it is code, since two words in a row are a syntax error
-  if (isCode(lines.map((line) => line.text.trim()))) {
+  if (
+    isCode(
+      lines.map((line) => line.text.trim()),
+      language,
+    )
+  ) {
     return { tier: 'code', reason: 'code' };
   }
 
@@ -474,7 +588,7 @@ function structureOf(lines: readonly BodyLine[]): Structure | undefined {
     layout ??= layoutReason(prose, lines[position]?.text ?? '');
 
     // a single line that looks like code may be prose, like one that starts with `import them from`
-    if (isCodeLine(line.trim())) {
+    if (language.isCodeLine(line.trim())) {
       codeLike = true;
     } else if (isMarkup(prose)) {
       manual ??= 'markup';
@@ -535,7 +649,7 @@ class FenceTracker {
   }
 }
 
-function segment(lines: readonly BodyLine[]): RawParagraph[] {
+function segment(lines: readonly BodyLine[], language: Language): RawParagraph[] {
   const paragraphs: RawParagraph[] = [];
   const fence = new FenceTracker();
 
@@ -590,6 +704,13 @@ function segment(lines: readonly BodyLine[]): RawParagraph[] {
     }
 
     if (line.verbatim) {
+      // a fence without a space after the comment prefix, like `//!```toml`, still opens a code block
+      if (fence.next(text)) {
+        start('code', line, '', 'code block');
+
+        continue;
+      }
+
       start('code', line, '', 'directive');
       flush();
 
@@ -623,7 +744,7 @@ function segment(lines: readonly BodyLine[]): RawParagraph[] {
       continue;
     }
 
-    const tag = JSDOC_TAG.exec(text);
+    const tag = language.tags ? JSDOC_TAG.exec(text) : null;
 
     if (tag) {
       start('tag', line, '', PROSE_TAGS.has(tag[1]) ? undefined : `@${tag[1]} tag`);
@@ -788,7 +909,29 @@ function sameLayout(a: readonly (readonly string[])[], b: readonly (readonly str
   return a.length === b.length && a.every((words, position) => words.join(' ') === b[position].join(' '));
 }
 
-function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): ParagraphReport {
+/**
+ * Returns the index of the first line that ends inside a token, like a link or a code span that
+ * continues on the next line, or -1 when every line ends between two tokens. The lines hold the
+ * text of the tokens.
+ */
+function splitTokenLine(lines: readonly (readonly string[])[], tokens: readonly string[]): number {
+  let next = 0;
+
+  return lines.findIndex((words) => {
+    const line = words.join(' ');
+
+    let text = '';
+
+    while (text.length < line.length && next < tokens.length) {
+      text += `${text ? ' ' : ''}${tokens[next]}`;
+      next += 1;
+    }
+
+    return text !== line;
+  });
+}
+
+function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, language: Language): ParagraphReport {
   const first = paragraph.lines[0];
   const last = paragraph.lines.at(-1) ?? first;
   const base = { kind: paragraph.kind, startLine: first.index + 1, endLine: last.index + 1 };
@@ -822,6 +965,7 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
       prose.lines.map((line) => {
         return { ...line, text: stripBlockSyntax(line.text) };
       }),
+      language,
     );
 
     const issues = keptIssues(prose, structure, options);
@@ -835,7 +979,7 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
     return { ...base, reflowable: false, reason: structure.reason, issues, suggestion: null };
   };
 
-  const structure = structureOf(paragraph.lines);
+  const structure = structureOf(paragraph.lines, language);
 
   if (structure) {
     return keep(structure);
@@ -876,16 +1020,22 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
   const written = currentLines.map((words) => ` ${words.join(' ')} `);
 
   /**
-   * Text that stays on one line, like a code span, may only be longer than the limit when it
-   * already is on one line, so a rewrap never adds a line that is too long.
+   * Text that stays on one line, like a code span or a link, may only be longer than the limit when
+   * it already is on one line, so a rewrap never adds a line that is too long.
    */
   const staysInLimit = (unit: string): boolean => {
     return unit.length <= hardLimit || written.some((line) => line.includes(` ${unit} `));
   };
 
-  // a code span or `{...}` group that continues on the next line would be joined into one line that is too long
+  // a code span, link, or `{...}` group that continues on the next line would be joined into one line that is too long
   if (!units.every((unit) => staysInLimit(unit))) {
     return keep({ tier: 'manual', reason: 'unbreakable text across lines' });
+  }
+
+  const text = currentLines.map((words) => words.join(' ')).join('\n');
+
+  if (!language.joinsCodeSpans && [...text.matchAll(CODE_SPAN)].some((span) => span[0].includes('\n'))) {
+    return keep({ tier: 'manual', reason: 'code span across lines' });
   }
 
   const bodyOf = (lines: readonly (readonly string[])[]): BodyLine[] => {
@@ -909,14 +1059,14 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
 
     for (;;) {
       const body = bodyOf(wrapped);
-      const rewrap = structureOf(body);
+      const rewrap = structureOf(body, language);
 
       if (!rewrap) {
         return { even, wrapped };
       }
 
       // the first line has no line to move a word up to, so the first word of the second line joins it instead
-      const tipping = body.findIndex((_, position) => structureOf(body.slice(0, position + 1)) !== undefined);
+      const tipping = body.findIndex((_, position) => structureOf(body.slice(0, position + 1), language) !== undefined);
       const start = wrapped.slice(0, Math.max(tipping, 1)).flat().length;
       const pair = `${current[start - 1]} ${current[start]}`;
 
@@ -957,6 +1107,7 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
 
   const { even, wrapped } = layout;
   const matchesLayout = sameLayout(wrapped, currentLines);
+  const isVerdict = (issue: LineIssue): boolean => ISSUE_TIERS[issue.type] === 'verdict';
 
   const lineIssues: LineIssue[] = [];
   const overflow: IssueReport[] = options.maxWidth === undefined ? [] : overflowIssues(paragraph.lines, options);
@@ -1051,9 +1202,17 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
         lineIssues.push({ type: 'unbalanced', line });
       }
     }
-  }
 
-  const isVerdict = (issue: LineIssue): boolean => ISSUE_TIERS[issue.type] === 'verdict';
+    /**
+     * The rewrap keeps a link, a code span, and a `{...}` group on one line. A line that ends
+     * inside one is a verdict whatever else holds for the paragraph, so the rewrap always joins it.
+     */
+    const splitLine = splitTokenLine(currentLines, tokens);
+
+    if (splitLine !== -1 && overflow.length === 0 && !lineIssues.some((issue) => isVerdict(issue))) {
+      lineIssues.push({ type: 'unbalanced', line: splitLine });
+    }
+  }
 
   /**
    * The tolerance is room past the width, so a paragraph that already has the layout for a width
@@ -1089,6 +1248,28 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions): Par
   const issues = byLine([...overflow, ...wrapIssues, ...styleIssues(paragraph, options)]);
 
   return { ...base, reflowable: true, issues, suggestion };
+}
+
+const LINE_COMMENT = 'line comment';
+
+/**
+ * Rewrapping a line comment would make a run of `//` lines, so the tool keeps it as written and
+ * only reports the lines that are longer than the maximum. Code and layout syntax are exempt,
+ * like in other text kept as written.
+ */
+function analyzeLineParagraph(paragraph: RawParagraph, options: AnalyzeOptions, language: Language): ParagraphReport {
+  const first = paragraph.lines[0];
+  const last = paragraph.lines.at(-1) ?? first;
+  const base = { kind: paragraph.kind, startLine: first.index + 1, endLine: last.index + 1 };
+
+  if (paragraph.kind === 'code') {
+    return { ...base, reflowable: false, reason: paragraph.reason, issues: [], suggestion: null };
+  }
+
+  const tier = structureOf(paragraph.lines, language)?.tier;
+  const issues = tier === 'code' || tier === 'layout' ? [] : overflowIssues(paragraph.lines, options);
+
+  return { ...base, reflowable: false, reason: LINE_COMMENT, issues, suggestion: null };
 }
 
 function computeLineStarts(source: string): number[] {
@@ -1131,43 +1312,64 @@ function stripCarriageReturn(line: string): string {
   return line.endsWith('\r') ? line.slice(0, -1) : line;
 }
 
+function blockKind(comment: ParsedComment, language: Language): CommentKind {
+  if (language.name === 'rust') {
+    return comment.doc ? `${comment.doc}-block-doc` : 'block';
+  }
+
+  return comment.value.startsWith('*') ? 'jsdoc' : 'block';
+}
+
+function wholeComment(
+  shape: Omit<CommentShape, 'paragraphs'>,
+  lines: readonly string[],
+  paragraphKind: ParagraphKind,
+  reason: string,
+): CommentShape {
+  const otherLines = lines.map((text, offset) => {
+    return { index: shape.startLine + offset, prefix: '', text, verbatim: false, hardBreak: false };
+  });
+
+  return { ...shape, paragraphs: [{ kind: paragraphKind, marker: '', reason, lines: otherLines }] };
+}
+
+// a code span only names a marker, like the `@license` in a comment that explains legal comments
+function isLegal(value: string, language: Language): boolean {
+  return language.legal.test(replaceKeepingLines(value, CODE_SPAN, '``'));
+}
+
 function shapeBlock(
   comment: ParsedComment,
   sourceLines: readonly string[],
   lineStarts: readonly number[],
+  language: Language,
 ): CommentShape {
   const startLine = lineOf(lineStarts, comment.start);
   const endLine = lineOf(lineStarts, comment.end - 1);
-  const kind: CommentKind = comment.value.startsWith('*') ? 'jsdoc' : 'block';
+  const shape = { kind: blockKind(comment, language), startLine, endLine };
   const lines = sourceLines.slice(startLine, endLine + 1);
 
-  const wholeComment = (paragraphKind: ParagraphKind, reason: string): CommentShape => {
-    const otherLines = lines.map((text, offset) => {
-      return { index: startLine + offset, prefix: '', text, verbatim: false, hardBreak: false };
-    });
+  // the `!` of a Rust inner doc comment marks it like the second `*` of a JSDoc comment
+  const value = comment.doc ? comment.value.slice(1) : comment.value.replace(/^\*/, '');
 
-    return { kind, startLine, endLine, paragraphs: [{ kind: paragraphKind, marker: '', reason, lines: otherLines }] };
-  };
-
-  const value = comment.value.replace(/^\*/, '');
-
-  // a code span only names a marker, like the `@license` in a comment that explains legal comments
-  if (LEGAL_COMMENT.test(replaceKeepingLines(comment.value, CODE_SPAN, '``'))) {
-    return wholeComment('code', 'legal comment');
+  if (isLegal(comment.value, language)) {
+    return wholeComment(shape, lines, 'code', 'legal comment');
   }
 
-  if (LINE_DIRECTIVE.test(value) || BLOCK_DIRECTIVE.test(value)) {
-    return wholeComment('code', 'directive');
+  if (LINE_DIRECTIVE.test(value) || language.blockDirective?.test(value)) {
+    return wholeComment(shape, lines, 'code', 'directive');
   }
 
   const other = (): CommentShape => {
     return wholeComment(
+      shape,
+      lines,
       'other',
       startLine === endLine ? 'single-line block comment' : 'unsupported block comment layout',
     );
   };
 
-  if (startLine === endLine || !/^\s*\/\*\*?$/.test(lines[0]) || !/^\s*\*\/$/.test(lines.at(-1) ?? '')) {
+  if (startLine === endLine || !/^\s*\/\*[*!]?$/.test(lines[0]) || !/^\s*\*\/$/.test(lines.at(-1) ?? '')) {
     return other();
   }
 
@@ -1192,7 +1394,84 @@ function shapeBlock(
     });
   }
 
-  return { kind, startLine, endLine, paragraphs: segment(body) };
+  return { ...shape, paragraphs: segment(body, language) };
+}
+
+/**
+ * Shapes a run of Rust line doc comments, like `///` or `//!` on consecutive lines, as one comment.
+ * Each line holds a prefix like the ` * ` of a block comment.
+ */
+function shapeLineRun(
+  group: readonly ParsedComment[],
+  sourceLines: readonly string[],
+  lineStarts: readonly number[],
+  language: Language,
+): CommentShape {
+  const startLine = lineOf(lineStarts, group[0].start);
+  const endLine = startLine + group.length - 1;
+  const kind: CommentKind = group[0].doc === 'inner' ? 'inner-line-doc' : 'outer-line-doc';
+  const shape = { kind, startLine, endLine };
+  const lines = sourceLines.slice(startLine, endLine + 1);
+  const values = group.map((comment) => comment.value.slice(1));
+
+  if (isLegal(values.join('\n'), language)) {
+    return wholeComment(shape, lines, 'code', 'legal comment');
+  }
+
+  if (LINE_DIRECTIVE.test(values[0])) {
+    return wholeComment(shape, lines, 'code', 'directive');
+  }
+
+  const body = lines.map((line, offset): BodyLine => {
+    const [, marker, space, text] = /^(\s*\/\/[/!])( ?)(.*)$/.exec(line) ?? ['', '', '', line];
+
+    return {
+      index: startLine + offset,
+      prefix: `${marker} `,
+      text: text.trimEnd(),
+      verbatim: (!space && text.length > 0) || LINE_DIRECTIVE.test(text),
+      hardBreak: HARD_BREAK.test(text),
+    };
+  });
+
+  return { ...shape, paragraphs: segment(body, language) };
+}
+
+/**
+ * Shapes a run of plain line comments (`//`) on consecutive lines as one comment. Each line is
+ * measured with its own prefix, like `//` without a space or the `///` of a TypeScript directive.
+ * Only the lines with a tool directive are directives, since a directive in a line comment covers
+ * its own line.
+ */
+function shapeLineComment(
+  group: readonly ParsedComment[],
+  sourceLines: readonly string[],
+  lineStarts: readonly number[],
+  language: Language,
+): CommentShape {
+  const startLine = lineOf(lineStarts, group[0].start);
+  const endLine = startLine + group.length - 1;
+  const shape = { kind: 'line' as const, startLine, endLine };
+  const lines = sourceLines.slice(startLine, endLine + 1);
+
+  if (isLegal(group.map((comment) => comment.value).join('\n'), language)) {
+    return wholeComment(shape, lines, 'code', 'legal comment');
+  }
+
+  const body = lines.map((line, offset): BodyLine => {
+    const [, marker, space, text] = /^(\s*\/\/[/!]*)( ?)(.*)$/.exec(line) ?? ['', '', '', line];
+
+    return {
+      index: startLine + offset,
+      prefix: `${marker}${space}`,
+      text: text.trimEnd(),
+      verbatim: LINE_DIRECTIVE.test(text),
+      hardBreak: HARD_BREAK.test(text),
+    };
+  });
+
+  // line comments have no JSDoc tags, so a line that starts with `@` is prose
+  return { ...shape, paragraphs: segment(body, { ...language, tags: false }) };
 }
 
 function ownsLines(comment: ParsedComment, source: string, lineStarts: readonly number[]): boolean {
@@ -1208,14 +1487,14 @@ function ownsLines(comment: ParsedComment, source: string, lineStarts: readonly 
 /**
  * Only a single-line block comment or prose without structure can stay on one line past the width.
  */
-function singleLineLength(paragraph: RawParagraph, options: AnalyzeOptions): number {
+function singleLineLength(paragraph: RawParagraph, options: AnalyzeOptions, language: Language): number {
   const [first] = paragraph.lines;
 
   if (paragraph.kind === 'other' && paragraph.reason === 'single-line block comment') {
     return sourceLineLength(first, options.tabWidth);
   }
 
-  if (paragraph.kind !== 'prose' || structureOf(paragraph.lines)) {
+  if (paragraph.kind !== 'prose' || structureOf(paragraph.lines, language)) {
     return Infinity;
   }
 
@@ -1240,10 +1519,107 @@ function describeFailure(errors: readonly OxcError[], lineStarts: readonly numbe
   return { message: first.message, line: offset === undefined ? undefined : lineOf(lineStarts, offset) + 1 };
 }
 
+interface ScannedSource {
+  readonly comments: readonly ParsedComment[];
+  readonly syntaxError?: SyntaxFailure;
+}
+
+function scanJavaScript(filename: string, text: string, lineStarts: readonly number[]): ScannedSource {
+  const { program, comments, errors } = parseSource(filename, text);
+
+  /**
+   * The parser returns an empty program when it stops at a syntax error, and it has only seen
+   * the comments before that error. An error that it recovers from, like a `return` outside of
+   * a function, leaves the program and its comments complete.
+   */
+  if (errors.length > 0 && program.body.length === 0) {
+    return { comments: [], syntaxError: describeFailure(errors, lineStarts) };
+  }
+
+  // drop a leading hashbang, which some parser versions report as a comment
+  return {
+    comments: (comments as ParsedComment[]).filter((comment) => !(comment.start === 0 && text.startsWith('#!'))),
+  };
+}
+
 /**
- * Finds all own-line block and JSDoc comments in a JavaScript or TypeScript source file and reports
- * how each paragraph deviates from a greedy wrap at `options.width`. Line comments (`//`) are never
- * analyzed. A source with a syntax error that stops the parser has no reports.
+ * Rust is read by rustc's lexer, which never stops early. A token that never ends, like an
+ * unterminated block comment or string, holds every comment after it, so such a source has
+ * no comments, like a JavaScript source that the parser stops at.
+ */
+function scanRustSource(text: string, lineStarts: readonly number[]): ScannedSource {
+  const { comments, error } = scanRust(text);
+
+  if (error) {
+    return { comments: [], syntaxError: { message: error.message, line: lineOf(lineStarts, error.offset) + 1 } };
+  }
+
+  return {
+    comments: comments.map((comment): ParsedComment => {
+      return {
+        type: comment.block ? 'Block' : 'Line',
+        value: text.slice(comment.start + 2, comment.block ? comment.end - 2 : comment.end),
+        start: comment.start,
+        end: comment.end,
+        doc: comment.doc,
+      };
+    }),
+  };
+}
+
+/**
+ * Groups the line comments that own their lines into runs of consecutive lines with the same
+ * marker and indentation, since each run reads as one comment. `markerOf` returns `undefined`
+ * for a comment that belongs to no run, which ends the run before it.
+ */
+function groupLineRuns(
+  comments: readonly ParsedComment[],
+  text: string,
+  lineStarts: readonly number[],
+  markerOf: (comment: ParsedComment) => string | undefined,
+): ParsedComment[][] {
+  const groups: ParsedComment[][] = [];
+
+  let current: ParsedComment[] | undefined;
+  let previousLine = -1;
+  let indent = '';
+  let marker: string | undefined;
+
+  for (const comment of comments) {
+    const next = comment.type === 'Line' ? markerOf(comment) : undefined;
+
+    if (next === undefined || !ownsLines(comment, text, lineStarts)) {
+      current = undefined;
+
+      continue;
+    }
+
+    const line = lineOf(lineStarts, comment.start);
+    const before = text.slice(lineStarts[line], comment.start);
+
+    if (current && line === previousLine + 1 && next === marker && before === indent) {
+      current.push(comment);
+    } else {
+      current = [comment];
+      indent = before;
+      marker = next;
+
+      groups.push(current);
+    }
+
+    previousLine = line;
+  }
+
+  return groups;
+}
+
+/**
+ * Finds all own-line block and JSDoc comments in a JavaScript or TypeScript source file, or block
+ * and doc comments in a Rust source file (`.rs`), and reports how each paragraph deviates from a
+ * greedy wrap at `options.width`. A run of Rust line doc comments (`///` or `//!`) counts as one
+ * comment. A run of other line comments (`//`) on their own lines is never rewrapped, and it is
+ * only reported when a line is longer than the maximum. A source with a syntax error that stops
+ * the parser has no reports.
  */
 export function analyzeSource(source: string, filename: string, options: AnalyzeOptions): CommentReport[] {
   return inspectSource(source, filename, options).comments;
@@ -1260,48 +1636,21 @@ export function inspectSource(source: string, filename: string, options: Analyze
 
   // a byte order mark is no text, so a comment on the first line owns its lines and is measured without the mark
   const text = source.startsWith(BYTE_ORDER_MARK) ? source.slice(1) : source;
-  const { program, comments, errors } = parseSource(filename, text);
+  const language = languageOf(filename);
   const lineStarts = computeLineStarts(text);
 
-  /**
-   * The parser returns an empty program when it stops at a syntax error, and it has only seen
-   * the comments before that error. An error that it recovers from, like a `return` outside of
-   * a function, leaves the program and its comments complete.
-   */
-  if (errors.length > 0 && program.body.length === 0) {
-    return { comments: [], syntaxError: describeFailure(errors, lineStarts) };
+  const scanned =
+    language.name === 'rust' ? scanRustSource(text, lineStarts) : scanJavaScript(filename, text, lineStarts);
+
+  if (scanned.syntaxError) {
+    return { comments: [], syntaxError: scanned.syntaxError };
   }
 
   const sourceLines = text.split('\n').map((line) => stripCarriageReturn(line));
-
-  // drop a leading hashbang, which some parser versions report as a comment
-  const parsed = (comments as ParsedComment[]).filter((comment) => !(comment.start === 0 && text.startsWith('#!')));
   const reports: CommentReport[] = [];
 
-  const blocks = parsed.filter((comment) => {
-    return (
-      comment.type === 'Block' && ownsLines(comment, text, lineStarts) && !comment.value.includes(IGNORE_DIRECTIVE)
-    );
-  });
-
-  for (const block of blocks) {
-    const shape = shapeBlock(block, sourceLines, lineStarts);
-
-    const singleLineWidth = Math.max(
-      options.width,
-      Math.min(options.singleLineWidth ?? options.width, options.maxWidth ?? Infinity),
-    );
-
-    // staying on one line always saves a line, so the tolerance applies on top of the single-line width
-    const singleLineLimit = Math.min(singleLineWidth + options.tolerance, options.maxWidth ?? Infinity);
-    const singleLine = shape.paragraphs.length === 1 ? singleLineLength(shape.paragraphs[0], options) : Infinity;
-
-    const paragraphOptions =
-      singleLine <= singleLineLimit ? { ...options, width: Math.max(singleLineWidth, singleLine) } : options;
-
-    const lines = sourceLines.slice(shape.startLine, shape.endLine + 1);
-
-    reports.push({
+  const report = (shape: CommentShape, lines: readonly string[], paragraphs: ParagraphReport[]): CommentReport => {
+    return {
       file: filename,
       kind: shape.kind,
       startLine: shape.startLine + 1,
@@ -1311,8 +1660,65 @@ export function inspectSource(source: string, filename: string, options: Analyze
       maxWidth: options.maxWidth,
       lengths: lines.map((line) => visualLength(line.trimEnd(), options.tabWidth)),
       text: lines.join('\n'),
-      paragraphs: shape.paragraphs.map((paragraph) => analyzeParagraph(paragraph, paragraphOptions)),
+      paragraphs,
+    };
+  };
+
+  const blocks = scanned.comments.filter((comment) => {
+    return (
+      comment.type === 'Block' && ownsLines(comment, text, lineStarts) && !comment.value.includes(IGNORE_DIRECTIVE)
+    );
+  });
+
+  const runs = (markerOf: (comment: ParsedComment) => string | undefined): ParsedComment[][] => {
+    return groupLineRuns(scanned.comments, text, lineStarts, markerOf).filter((group) => {
+      return !group.some((comment) => comment.value.includes(IGNORE_DIRECTIVE));
     });
+  };
+
+  const shapes = [
+    ...blocks.map((block) => shapeBlock(block, sourceLines, lineStarts, language)),
+    ...runs((comment) => comment.doc).map((group) => shapeLineRun(group, sourceLines, lineStarts, language)),
+    ...runs((comment) => (comment.doc ? undefined : '//')).map((group) =>
+      shapeLineComment(group, sourceLines, lineStarts, language),
+    ),
+  ].toSorted((a, b) => a.startLine - b.startLine);
+
+  for (const shape of shapes) {
+    const lines = sourceLines.slice(shape.startLine, shape.endLine + 1);
+
+    if (shape.kind === 'line') {
+      const paragraphs = shape.paragraphs.map((paragraph) => analyzeLineParagraph(paragraph, options, language));
+
+      // a line comment only has overflow to report, so one that fits is no comment of interest
+      if (paragraphs.some((paragraph) => paragraph.issues.length > 0)) {
+        reports.push(report(shape, lines, paragraphs));
+      }
+
+      continue;
+    }
+
+    const singleLineWidth = Math.max(
+      options.width,
+      Math.min(options.singleLineWidth ?? options.width, options.maxWidth ?? Infinity),
+    );
+
+    // staying on one line always saves a line, so the tolerance applies on top of the single-line width
+    const singleLineLimit = Math.min(singleLineWidth + options.tolerance, options.maxWidth ?? Infinity);
+
+    const singleLine =
+      shape.paragraphs.length === 1 ? singleLineLength(shape.paragraphs[0], options, language) : Infinity;
+
+    const paragraphOptions =
+      singleLine <= singleLineLimit ? { ...options, width: Math.max(singleLineWidth, singleLine) } : options;
+
+    reports.push(
+      report(
+        shape,
+        lines,
+        shape.paragraphs.map((paragraph) => analyzeParagraph(paragraph, paragraphOptions, language)),
+      ),
+    );
   }
 
   return { comments: reports };
@@ -1356,12 +1762,17 @@ export function rewrapComment(report: CommentReport): string {
 const POSITION_KEYS = new Set(['start', 'end', 'range', 'loc']);
 
 /**
- * Returns the syntax tree of the source as JSON, without positions or comments, used to verify
- * that only comments changed. Moving or rewording a comment keeps it the same, while any change
- * to a string, template, regex, JSX text, or where a statement ends changes it. A source that
- * doesn't parse has no tree to compare, so all of its text counts.
+ * Returns the syntax tree of the source as JSON, without positions or comments, used to verify that
+ * only comments changed. Moving or rewording a comment leaves the tree the same, while any change to
+ * a string, template, regex, JSX text, or where a statement ends changes it. A source that doesn't
+ * parse has no tree to compare, so all of its text counts. A Rust source is compared by its tokens
+ * instead, with each run of doc comments as one marker (see `rustFingerprint`).
  */
 export function codeFingerprint(source: string, filename: string): string {
+  if (languageOf(filename).name === 'rust') {
+    return rustFingerprint(source);
+  }
+
   const { program, errors } = parseSource(filename, source);
 
   if (errors.length > 0) {

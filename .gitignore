@@ -8,6 +8,10 @@ lerna-debug.log*
 
 node_modules
 dist
+native/**/target
+native/*.node
+native/comments.d.ts
+.scratch
 dist-ssr
 storybook-static
 **/test/e2e/.auth

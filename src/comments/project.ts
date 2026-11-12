@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { inspectSource, type CommentReport, type SyntaxFailure } from './analyze.js';
-import { DEFAULT_EXTENSIONS, PrettierOptionsResolver, type CommentsConfig } from './config.js';
+import { DEFAULT_EXTENSIONS, PrettierOptionsResolver, RustfmtOptionsResolver, type CommentsConfig } from './config.js';
 import { getChangedLines, listFiles, snapshotChanges } from './git.js';
 
 export interface Scope {
@@ -91,6 +91,7 @@ function overlaps(comment: CommentReport, filter: LineFilter): boolean {
 
 export class Project {
   private readonly _prettier: PrettierOptionsResolver;
+  private readonly _rustfmt: RustfmtOptionsResolver;
   private readonly _extensions: ReadonlySet<string>;
 
   constructor(
@@ -99,6 +100,7 @@ export class Project {
     private readonly _options: { readonly isGitRepo: boolean; readonly cwd: string; readonly width?: number },
   ) {
     this._prettier = new PrettierOptionsResolver(root);
+    this._rustfmt = new RustfmtOptionsResolver(root);
     this._extensions = new Set(config.extensions ?? DEFAULT_EXTENSIONS);
   }
 
@@ -112,8 +114,10 @@ export class Project {
     }
 
     const relative = this.relative(absolute);
+    const matches = (patterns: readonly string[]) => patterns.some((pattern) => path.matchesGlob(relative, pattern));
+    const include = this.config.include ?? [];
 
-    return !(this.config.ignore ?? []).some((pattern) => path.matchesGlob(relative, pattern));
+    return (include.length === 0 || matches(include)) && !matches(this.config.ignore ?? []);
   }
 
   private _filesIn(directory: string): string[] {
@@ -186,9 +190,11 @@ export class Project {
 
   async analyzeFile(absolute: string, filter: LineFilter = 'all'): Promise<FileAnalysis> {
     const source = readFileSync(absolute, 'utf8');
-    const prettier = await this._prettier.resolve(absolute);
+    const isRust = absolute.endsWith('.rs');
+    const formatter = isRust ? this._rustfmt.resolve(absolute) : await this._prettier.resolve(absolute);
+
     const file = this.relative(absolute);
-    const width = this._options.width ?? this.config.width ?? prettier.printWidth ?? DEFAULT_WIDTH;
+    const width = this._options.width ?? this.config.width ?? formatter.printWidth ?? DEFAULT_WIDTH;
 
     const maxWidth =
       this.config.maxWidth ??
@@ -198,7 +204,7 @@ export class Project {
       width,
       maxWidth,
       singleLineWidth: this.config.singleLineWidth ?? DEFAULT_SINGLE_LINE_WIDTH,
-      tabWidth: prettier.tabWidth ?? DEFAULT_TAB_WIDTH,
+      tabWidth: formatter.tabWidth ?? DEFAULT_TAB_WIDTH,
       tolerance: Math.min(this.config.tolerance ?? 0, maxWidth - width),
       avoidSentenceOrphans: this.config.avoidSentenceOrphans ?? true,
       style: this.config.style ?? true,

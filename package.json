@@ -10,13 +10,14 @@
   "type": "module",
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "build": "tsup",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "build": "pnpm run build:native && tsup",
+    "build:native": "napi build --platform --release --manifest-path native/Cargo.toml --config-path native/napi.json --output-dir native --no-js --dts comments.d.ts",
+    "test": "pnpm run build:native && vitest run",
+    "test:watch": "pnpm run build:native && vitest",
     "check": "tsc --noEmit",
     "lint": "pnpm run build && oxlint && eslint",
     "lint:fix": "pnpm run build && oxlint --fix && eslint --fix",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "tsup && node native/check-binaries.mjs"
   },
   "exports": {
     "./eslint": {
@@ -44,7 +45,8 @@
     "comments": "./dist/bin/comments.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "native/*.node"
   ],
   "keywords": [
     "eslint",
@@ -76,6 +78,7 @@
     }
   },
   "devDependencies": {
+    "@napi-rs/cli": "^3.10.12",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/common-tags": "^1.8.4",
     "@types/eslint": "^9.6.1",

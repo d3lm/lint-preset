@@ -9,8 +9,8 @@ export interface WrapOptions {
   readonly avoidSentenceOrphans: boolean;
 
   /**
-   * Sets how many columns a line may exceed its limit before it counts as overflowing. A layout
-   * also uses them when that saves a line.
+   * Sets how many columns a line may exceed its limit before it counts as overflowing.
+   * A layout also uses those columns when that saves a line.
    */
   readonly tolerance: number;
 
@@ -123,9 +123,142 @@ function findCodeSpanEnd(text: string, start: number): number {
 }
 
 /**
- * JSDoc writes types and `{@link ...}` tags as `{...}` groups, so they stay intact like code spans.
+ * Returns whether a backslash escapes the character at `index`, as in Markdown. A backslash that
+ * another one escapes, like the second of `\\[`, escapes nothing.
+ */
+function isEscaped(text: string, index: number): boolean {
+  let backslashes = 0;
+
+  while (text[index - 1 - backslashes] === '\\') {
+    backslashes += 1;
+  }
+
+  return backslashes % 2 === 1;
+}
+
+function findUnescaped(text: string, char: string, start: number): number {
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === '\\') {
+      index += 1;
+    } else if (text[index] === char) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Returns the index of the `]` that closes the `[` at `start`, or -1 when it never closes.
+ * Brackets pair up as in Markdown, where a bracket after a backslash or in a code span is no
+ * bracket. A brace is no syntax in Markdown, so a `{` after the `[` never hides the `]`.
+ */
+function findClosingBracket(text: string, start: number): number {
+  let depth = 0;
+
+  for (let index = start; index < text.length; index += 1) {
+    switch (text[index]) {
+      case '\\': {
+        index += 1;
+
+        break;
+      }
+      case '`': {
+        const close = findCodeSpanEnd(text, index);
+
+        // a run of backticks that never closes is literal text
+        index = close === -1 ? index + backtickRun(text, index) - 1 : close;
+
+        break;
+      }
+      case '[': {
+        depth += 1;
+
+        break;
+      }
+      case ']': {
+        depth -= 1;
+
+        if (depth === 0) {
+          return index;
+        }
+
+        break;
+      }
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Returns the index of the `)` that closes the `(` at `start`, which opens the destination of a
+ * Markdown link, or -1 when it never closes. Parentheses pair up. A destination in angle brackets,
+ * like `(<a b>)`, and a title in quotes after the destination, like `(target "title")`, can hold a
+ * parenthesis that pairs up with nothing.
+ */
+function findDestinationEnd(text: string, start: number): number {
+  let depth = 0;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+
+    let close = -1;
+
+    if (char === '\\') {
+      index += 1;
+    } else if (char === '<' && text.slice(start + 1, index).trim() === '') {
+      close = findUnescaped(text, '>', index + 1);
+    } else if ((char === '"' || char === "'") && /\s/.test(text[index - 1])) {
+      close = findUnescaped(text, char, index + 1);
+    } else if (char === '(') {
+      depth += 1;
+    } else if (char === ')' && --depth === 0) {
+      return index;
+    }
+
+    index = close === -1 ? index : close;
+  }
+
+  return -1;
+}
+
+/**
+ * Returns the index of the last character of the Markdown link that starts with the `[` at
+ * `start`, or -1 when the bracket never closes. A link is the text in brackets, like `[text]`,
+ * with the destination right after it, like `[text](target "title")`. The label of a reference
+ * link, like the second pair of brackets in `[text][label]`, is a link that starts right after
+ * the first one, so it needs no check of its own.
+ *
+ * Only the syntax counts. Whether the text in brackets resolves to anything, like an intra-doc link
+ * in Rust or a link reference definition, is something only the renderer knows.
+ */
+function findLinkEnd(text: string, start: number): number {
+  const close = findClosingBracket(text, start);
+
+  if (close === -1 || text[close + 1] !== '(') {
+    return close;
+  }
+
+  const end = findDestinationEnd(text, close + 1);
+
+  return end === -1 ? close : end;
+}
+
+/**
+ * Splits text into words. JSDoc writes types and `{@link ...}` tags as `{...}` groups, so they stay
+ * intact like code spans.
+ *
+ * A Markdown link stays intact too, since a link that continues on the next line can't be followed
+ * in an editor. rust-analyzer, for one, only resolves an intra-doc link that sits on one line of
+ * a `///` comment. A link is one word, like a code span, but its own words keep one space between
+ * them, like the words around it.
  */
 export function tokenize(text: string): string[] {
+  return splitWords(text, true);
+}
+
+function splitWords(text: string, keepLinks: boolean): string[] {
   const tokens: string[] = [];
 
   let current = '';
@@ -133,6 +266,15 @@ export function tokenize(text: string): string[] {
 
   while (index < text.length) {
     const char = text[index];
+    const linkEnd = keepLinks && char === '[' && !isEscaped(text, index) ? findLinkEnd(text, index) : -1;
+
+    if (linkEnd !== -1) {
+      current += splitWords(text.slice(index, linkEnd + 1), false).join(' ');
+      index = linkEnd + 1;
+
+      continue;
+    }
+
     const close = char === '`' ? findCodeSpanEnd(text, index) : char === '{' ? findClosingBrace(text, index) : -1;
 
     // a run of backticks that never closes is literal text, and none of its backticks open a span
@@ -281,13 +423,18 @@ function isOrphan(previous: string, token: string): boolean {
 }
 
 /**
- * Returns whether Markdown or JSDoc reads a word as the start of a block when it begins a line,
- * like a list marker (`-`, `1.`), a heading (`#`), a quote (`>`), a fence, a table row, an HTML
- * tag, or a JSDoc tag like `@param`. Wrapping must never move such a word to the start of a line,
- * or the paragraph would turn into something else.
+ * Returns whether Markdown or JSDoc reads a word as the start of a block when it begins a line, like a
+ * list marker (`-`, `1.`), a heading (`#`), a quote (any word that starts with `>`, like `>=`), a fence,
+ * a table row, an HTML tag, comment, or declaration (`<div>`, `<!--`, `<?`), or a JSDoc tag like `@param`.
+ * A run of `-`, `=`, `*`, or `_` on a line of its own is a heading underline or a rule, so it never starts
+ * a line either. Wrapping must never move such a word to the start of a line, or the paragraph would turn
+ * into something else.
  */
 export function startsBlock(token: string): boolean {
-  return /^(?:[-*+>]|\d+[.)]|#{1,6})$/.test(token) || /^(?:@[A-Za-z]|`{3}|~{3}|\||<\/?[A-Za-z])/.test(token);
+  return (
+    /^(?:\+|-+|=+|\*+|_{3,}|\d+[.)]|#{1,6})$/.test(token) ||
+    /^(?:>|@[A-Za-z]|`{3}|~{3}|\||<(?:\/?[A-Za-z]|[!?]))/.test(token)
+  );
 }
 
 export function bindLineStarts(
@@ -725,8 +872,8 @@ function balanceTokens(
 }
 
 /**
- * Returns whether a line sticks out more than `MAX_STEP` columns past the line before it. The first
- * line starts `offset` columns after the others, so it ends that much later too.
+ * Returns whether a line sticks out more than `MAX_STEP` columns past the line before it.
+ * The first line starts `offset` columns after the others, so it ends that much later too.
  */
 function hasStep(lines: readonly (readonly string[])[], offset = 0): boolean {
   return lines.some((line, index) => {

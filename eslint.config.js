@@ -7,7 +7,7 @@ export default eslintConfig({
 
   /**
    * These paths hold intentional rule violations used by the rule-ownership test, and source
-   * snapshots that eval runs write verbatim.
+   * snapshots that eval runs write verbatim. NAPI-RS generates the typings of the native addon.
    */
-  ignores: ['src/configs/__tests__/fixtures/violations/**', 'evals/runs/**'],
+  ignores: ['src/configs/__tests__/fixtures/violations/**', 'native/*.d.ts'],
 });

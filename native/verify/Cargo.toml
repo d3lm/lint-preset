@@ -1,0 +1,9 @@
+[package]
+name = "comments-verify"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false }
+serde_json = "1"
