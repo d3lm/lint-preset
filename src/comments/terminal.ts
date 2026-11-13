@@ -212,15 +212,14 @@ class AgentTable {
     const statusWidth = Math.max(...this._rows.map((row) => this._status(row).length));
     const filesWidth = columns - (3 + 2 + nameWidth + 2 + commentsWidth + 2 + statusWidth + 2);
 
-    // a table taller than the terminal can't be redrawn in place, so only rows that change are listed
+    // a table taller than the terminal can't be redrawn in place
     const height = (this._output.rows || 24) - 3;
-    const compact = !final && this._rows.length + 1 > height;
 
     const visible = this._rows
       .map((row, index) => {
         return { row, index };
       })
-      .filter(({ row }) => !compact || row.state === 'running' || row.state === 'failed')
+      .filter(({ row }) => final || row.state === 'running')
       .slice(0, Math.max(height - 1, 1));
 
     const lines = visible.map(({ row, index }) => {
@@ -238,11 +237,16 @@ class AgentTable {
       );
     });
 
-    if (compact) {
-      const done = this._count('done');
-      const queued = this._count('queued');
+    if (!final) {
+      const failed = this._count('failed');
 
-      lines.push(`${bar}  ${this._paint('dim', `${S_DONE} ${done} done, ${S_RADIO_INACTIVE} ${queued} queued`)}`);
+      const summary = [
+        `${S_DONE} ${this._count('done')} done`,
+        ...(failed > 0 ? [`${S_FAILED} ${failed} failed`] : []),
+        `${S_RADIO_INACTIVE} ${this._count('queued')} queued`,
+      ].join(', ');
+
+      lines.push(`${bar}  ${this._paint('dim', summary)}`);
     }
 
     return lines;
