@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { inspectSource, type CommentReport, type SyntaxFailure } from './analyze.js';
+import { inspectSource, type AnalyzeOptions, type CommentReport, type SyntaxFailure } from './analyze.js';
 import { DEFAULT_EXTENSIONS, PrettierOptionsResolver, RustfmtOptionsResolver, type CommentsConfig } from './config.js';
 import { getChangedLines, listFiles, snapshotChanges } from './git.js';
 
@@ -188,7 +188,11 @@ export class Project {
     return files;
   }
 
-  async analyzeFile(absolute: string, filter: LineFilter = 'all'): Promise<FileAnalysis> {
+  async analyzeFile(
+    absolute: string,
+    filter: LineFilter = 'all',
+    overrides: Pick<AnalyzeOptions, 'exact'> = {},
+  ): Promise<FileAnalysis> {
     const source = readFileSync(absolute, 'utf8');
     const isRust = absolute.endsWith('.rs');
     const formatter = isRust ? this._rustfmt.resolve(absolute) : await this._prettier.resolve(absolute);
@@ -208,6 +212,7 @@ export class Project {
       tolerance: Math.min(this.config.tolerance ?? 0, maxWidth - width),
       avoidSentenceOrphans: this.config.avoidSentenceOrphans ?? true,
       style: this.config.style ?? true,
+      ...overrides,
     });
 
     return { file, absolute, source, comments: comments.filter((comment) => overlaps(comment, filter)), syntaxError };

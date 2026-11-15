@@ -385,7 +385,7 @@ describe('runs of Rust line doc comments', () => {
   it('accepts lines that one word moved down puts out of line with the rewrap, within the tolerance', () => {
     const settings = { width: 100, maxWidth: 120, tolerance: 5 };
 
-    // `meaning` fits on the first line, and the rewrap that moves it up has lines of 92 to 98 columns
+    // `meaning` fits on the first line, and the rewrap without the orphan rule moves it up, with lines of 92 to 98
     const source = [
       'impl Kernel {',
       '  /// Drains the stable ids of external files that became fully dead since the last drain,',
@@ -404,8 +404,12 @@ describe('runs of Rust line doc comments', () => {
     expect(issues(source, settings)).toEqual([]);
     expect(fix(source, settings)).toBe(source);
 
+    const plain = { ...settings, avoidSentenceOrphans: false };
+
+    expect(issues(source, plain)).toEqual([]);
+
     // the first line has 90 columns, more than 1 fewer than the 92 of the shortest line of the rewrap
-    expect(issues(source, { ...settings, tolerance: 1 })).toEqual(['2:unbalanced']);
+    expect(issues(source, { ...plain, tolerance: 1 })).toEqual(['2:unbalanced']);
   });
 
   it('reports a line past the width plus the tolerance as wide', () => {
@@ -425,6 +429,104 @@ describe('runs of Rust line doc comments', () => {
     // the first two lines have 106 columns, one more than the width plus the tolerance
     expect(issues(source, settings)).toEqual(['2:wide', '3:wide']);
     expect(issues(source, { ...settings, tolerance: 6 })).toEqual([]);
+  });
+});
+
+function block(lines: string[]): string {
+  return `/*\n${lines.map((line) => ` * ${line}`).join('\n')}\n */\nfn a() {}\n`;
+}
+
+function outer(lines: string[]): string {
+  return `${lines.map((line) => `/// ${line}`).join('\n')}\nenum A {}\n`;
+}
+
+function inner(lines: string[]): string {
+  return `impl A {\n${lines.map((line) => `  /// ${line}`).join('\n')}\n  fn b() {}\n}\n`;
+}
+
+describe('words at the end of a line', () => {
+  const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+  function expectLayout(comment: (lines: string[]) => string, lines: string[]): void {
+    const layout = comment(lines);
+
+    expect(fix(comment([lines.join(' ')]), settings)).toBe(layout);
+    expect(issues(layout, settings)).toEqual([]);
+    expect(fix(layout, settings)).toBe(layout);
+  }
+
+  it('fills lines up to the width', () => {
+    expectLayout(block, [
+      'A time is a finite number of milliseconds. Linux refuses a timespec whose nanoseconds are out of',
+      'range with `EINVAL` once the file is found and before it asks who the caller is, and every call',
+      'that sets a time refuses one that is not finite the same way. A node then never holds a time that',
+      'an index of the tree could not carry.',
+    ]);
+
+    expectLayout(block, [
+      'The commit cannot report a failure, so it has to be able to rely on its plan. These tests hand',
+      'it a plan that names what the file system does not hold and check that a debug build stops there,',
+      'where carrying on would leave a name without its node.',
+    ]);
+  });
+
+  it('moves an article to the next line', () => {
+    expectLayout(block, [
+      'Checks that the balance of the personal wallet follows the profile row, with the real auth',
+      'provider, query cache, and realtime client. Only the auth server, the realtime server, and',
+      'the database are played.',
+    ]);
+
+    expectLayout(block, [
+      '`lib` decodes this format as well, and `tests/fixtures/index_decode.json` pins its decoder',
+      'and this one to the same verdicts. Each vector holds a payload and whether the decode and',
+      'the validation take it, so a rule that changes on one side fails the test of the other.',
+    ]);
+  });
+
+  it('uses the tolerance to keep an article with its noun', () => {
+    expectLayout(block, [
+      'Builds a chain of nested directories one level at a time through a held dirfd, the way an unprivileged',
+      'guest can, and then renames its top. The check that a directory is not moved below itself climbs from',
+      "the destination, so the chain's depth never reaches the stack, and the rename runs on a thread whose",
+      'stack would overflow from one frame per level.',
+    ]);
+
+    expectLayout(block, [
+      'Linux takes every path as a C string, which ends at its first NUL, so no name and no symlink target',
+      'on a Linux filesystem holds one. A path arrives here with its length instead, so the kernel refuses',
+      "a NUL with `EINVAL` before any lookup, in either path of a call and in a symlink's target. No call",
+      'can then create a name or a target that an index of the tree could not carry.',
+    ]);
+  });
+
+  it('moves the first word after a comma to the next line, unless it only joins the two sides', () => {
+    expectLayout(outer, [
+      'Selects how `utimensat` updates one timestamp, mirroring the timespec forms of Linux.',
+      '`Set` carries wall-clock milliseconds like the existing atime and mtime arguments,',
+      '`Now` matches `UTIME_NOW`, and `Omit` matches `UTIME_OMIT`.',
+    ]);
+
+    expectLayout(inner, [
+      "Changes a path's mode relative to a dirfd, like fchmodat(2). Linux cannot chmod a symlink,",
+      'so `AT_SYMLINK_NOFOLLOW` resolving to a symlink reports `EOPNOTSUPP` (fchmodat2 semantics).',
+    ]);
+
+    expectLayout(inner, [
+      'Creates an empty regular file named `name` in an already resolved parent directory,',
+      'where `canonical_path` spells the path a name that turned out to be taken reports.',
+    ]);
+  });
+
+  it('only hints at a layout that the words at the end of its lines alone set apart from the rewrap', () => {
+    const source = outer([
+      'Selects how `utimensat` updates one timestamp, mirroring the timespec forms of Linux.',
+      '`Set` carries wall-clock milliseconds like the existing atime and mtime arguments, `Now`',
+      'matches `UTIME_NOW`, and `Omit` matches `UTIME_OMIT`.',
+    ]);
+
+    expect(issues(source, settings)).toEqual(['2:orphan']);
+    expect(issues(source, { ...settings, avoidSentenceOrphans: false })).toEqual([]);
   });
 });
 

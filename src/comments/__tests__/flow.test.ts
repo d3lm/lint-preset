@@ -489,7 +489,7 @@ describe('buildPrompt', () => {
     expect(prompt).not.toContain('has no other notes as it is');
   });
 
-  it('notes a line that may end with the start of a sentence, but not one that ends with the word after a comma', () => {
+  it('notes a line that may end with the start of a sentence, but not one that ends with `and` after a comma', () => {
     const settings = { width: 22, tabWidth: 2, tolerance: 0, avoidSentenceOrphans: true, style: true };
 
     const notesOf = (source: string): string[] => {
@@ -502,7 +502,7 @@ describe('buildPrompt', () => {
 
     expect(notesOf('/**\n * It ends here. This\n * goes on and on.\n */\n')).toEqual([
       expect.stringMatching(
-        /^- possible: line 2 may end with the start of a new sentence or parenthetical, or with the first word after a semicolon or colon, which belongs on the next line \(leave it if .+\)$/,
+        /^- possible: line 2 may end with the start of a new sentence or parenthetical, with the first word after a semicolon, colon, or comma, or with an article like `the`, which belongs on the next line \(leave it if .+\)$/,
       ),
     ]);
 
@@ -532,20 +532,27 @@ describe('DEFAULT_RULES', () => {
     expect(DEFAULT_RULES).not.toMatch(/No line may exceed|leaves at least three words/);
   });
 
-  it('keeps the start of a sentence off the end of a line, and lets the word after a comma end one', () => {
+  it('keeps the start of a sentence off the end of a line, and only moves the word after a comma for a note', () => {
     const rule = DEFAULT_RULES.split('\n').find((line) => line.startsWith("- Don't end a line with the first word"));
 
     expect(rule).toContain('of a new sentence or parenthetical, like `This` after a period or `(the`');
     expect(rule).toContain('or with the first word after a semicolon or colon. Move it to the next line instead.');
     expect(rule).toContain('The word after a comma is no such word. A line may end with it, like `and` in');
 
-    // the tool lets that word end a line, so the rules must not tell the agent to move it down
-    expect(DEFAULT_RULES).not.toMatch(/after a comma, or|sentence, clause, or parenthetical/);
+    const soft = DEFAULT_RULES.split('\n').find((line) => line.startsWith('- When the note points at them'));
+
+    expect(soft).toContain('an article like `the`');
+
+    expect(soft).toContain(
+      'the first word after a comma, like `so` in `...a symlink, so`. `and`, `or`, and `nor` may stay.',
+    );
+
+    expect(DEFAULT_RULES).not.toMatch(/sentence, clause, or parenthetical/);
 
     const prompt = buildPrompt({ rules: DEFAULT_RULES, root: '/repo', comments: [] });
 
     expect(prompt).toContain(
-      '- A note that a line may end with the start of a sentence or parenthetical, or with the first word after a semicolon or colon, is the exception.',
+      '- A note that a line may end with the start of a sentence or parenthetical, with the first word after a semicolon, colon, or comma, or with an article, is the exception.',
     );
 
     expect(prompt).not.toMatch(/sentence, clause, or parenthetical/);
@@ -575,6 +582,10 @@ describe('DEFAULT_RULES', () => {
 
 function file(name: string, count: number) {
   return { name, comments: Array.from({ length: count }) };
+}
+
+function block(lines: readonly string[]): string {
+  return `/*\n${lines.map((line) => ` * ${line}`).join('\n')}\n */\n`;
 }
 
 function names(batches: readonly (readonly { name: string }[])[]): string[][] {
@@ -668,6 +679,49 @@ describe('runFlow', () => {
 
     expect(prompt).toContain('leave its line breaks to the tool');
     expect(prompt.trimEnd().endsWith('1')).toBe(true);
+  });
+
+  it('rewraps the line breaks of a comment the agent changed, even within the tolerance', async () => {
+    // the second line has 92 columns, within the tolerance of the 100 that the rewrap gives it
+    const near = block([
+      'The commit cannot report a failure, so it has to be able to rely on its plan. These tests hand',
+      'it a plan that names what the file system does not hold and check that a debug build stops',
+      'there, where carrying on would leave a name without its node.',
+    ]);
+
+    // the second line ends with an article, which the rewrap moves to its noun
+    const written = block([
+      '`lib` decodes this format as well, and `tests/fixtures/index_decode.json` pins its decoder and',
+      'this one to the same verdicts. Each vector holds a payload and whether the decode and the',
+      'validation take it, so a rule that changes on one side fails the test of the other.',
+    ]);
+
+    const rewrapped = block([
+      '`lib` decodes this format as well, and `tests/fixtures/index_decode.json` pins its decoder',
+      'and this one to the same verdicts. Each vector holds a payload and whether the decode and',
+      'the validation take it, so a rule that changes on one side fails the test of the other.',
+    ]);
+
+    const code = 'export const a = 1;\n';
+
+    initRepo({ 'a.ts': code });
+    writeFileSync(path.join(directory, 'a.ts'), `${near}${misformatted}`);
+
+    const agent = writeAgent([
+      "readFileSync(0, 'utf8');",
+      `writeFileSync('a.ts', ${JSON.stringify(`${near}${written}${code}`)});`,
+    ]);
+
+    const summary = await runFlow(
+      createProject({ width: 100, maxWidth: 120, tolerance: 5, agent: { command: [process.execPath, agent] } }),
+      {},
+      { ...options, mode: 'agent', select: 'suspicious' },
+    );
+
+    expect(summary).toMatchObject({ sentToAgent: 1, rewrapped: 1, remaining: [] });
+
+    // the first comment had this text before the agent ran, so its line breaks stay
+    expect(readFileSync(path.join(directory, 'a.ts'), 'utf8')).toBe(`${near}${rewrapped}${code}`);
   });
 
   it('rewraps comments with only layout issues itself, without an agent', async () => {

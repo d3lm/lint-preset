@@ -3,15 +3,15 @@ export interface WrapOptions {
    * Sets whether a line may not end with the first word of a sentence or parenthetical, like
    * `This` or `(the`, or with the first word after a semicolon or colon. Such a word moves to
    * the next line instead. The word after a comma may end a line. It also sets whether a line
-   * avoids ending with the first two words of a sentence, and whether the first of two lines
-   * ends with a sentence instead of the start of the next one, as long as the second line is
-   * then no longer than the first.
+   * avoids ending with the first two words of a sentence, with the first word after a comma,
+   * or with an article, and whether the first of two lines ends with a sentence instead of the
+   * start of the next one, as long as the second line is then no longer than the first.
    */
   readonly avoidSentenceOrphans: boolean;
 
   /**
-   * Sets how many columns a line may exceed its limit before it counts as overflowing.
-   * A layout also uses those columns when that saves a line.
+   * Sets how many columns a line may exceed its limit before it counts as overflowing. A layout
+   * also uses those columns when that saves a line, or keeps an article with its noun.
    */
   readonly tolerance: number;
 
@@ -44,10 +44,11 @@ const CLAUSE_END = /[.!?,;:]["')\]*_]*$/;
 const SENTENCE_END = /[.!?]["')\]*_]*$/;
 
 /**
- * Matches a word that ends a sentence, or that ends with a semicolon or colon. The word after
- * it starts something new, so it stays off the end of a line. A comma is left out, because
- * the sentence goes on after one. A line may end with the word after a comma, like `and` in
- * `...the paths, and`, and keeping that word off the end would only make the lines less even.
+ * Matches a word that ends a sentence, or that ends with a semicolon or colon. The word after it
+ * starts something new, so it stays off the end of a line. A comma is left out, because the sentence
+ * goes on after one. A line may end with the word after a comma, like `and` in `...the paths, and`,
+ * since keeping every such word off the end would make the lines less even. Such a word only costs a
+ * little (see `CLAUSE_START_COST`).
  */
 const STATEMENT_END = /[.!?;:]["')\]*_]*$/;
 
@@ -583,9 +584,17 @@ export interface LayoutOptions extends WrapOptions {
   readonly keepSteps?: boolean;
 
   /**
-   * Lets a line end with the first few words of a sentence at no extra cost.
+   * Sets which words at the end of a line cost extra. By default, the first few words of a
+   * sentence, the first word after a comma, and an article do. With `sentences`, only the
+   * first words of a sentence do, and with `none`, no word does.
    */
-  readonly ignoreSentenceStarts?: boolean;
+  readonly endWords?: 'sentences' | 'none';
+
+  /**
+   * Makes a line that ends with an article, like `the`, cost `ARTICLE_COST`, while one that ends
+   * with the first words of a sentence costs nothing extra.
+   */
+  readonly avoidArticles?: boolean;
 }
 
 /**
@@ -603,6 +612,27 @@ const PARENTHETICAL_SPLIT_WEIGHT = 2;
  */
 const SENTENCE_START_COST = 25;
 const MAX_SENTENCE_START_WORDS = 2;
+
+/**
+ * Sets how much a line costs when it ends with the first word after a comma, like `so` in
+ * `...a symlink, so`, since that word starts what the next line says. A word that only joins
+ * the two sides, like `and`, costs nothing (see `STATEMENT_END`).
+ */
+const CLAUSE_START_COST = 10;
+const JOINING_WORDS = new Set(['and', 'or', 'nor']);
+
+/**
+ * Sets how much a line costs when it ends with an article, which belongs to the noun on the next
+ * line. It only counts when the lines may use the tolerance to keep the article with its noun.
+ */
+const ARTICLE_COST = 50;
+const ARTICLES = new Set(['a', 'an', 'the']);
+
+/**
+ * Sets how much a line that may use the tolerance to keep an article with its noun costs for the
+ * square of its columns past the limit, so only the lines that need the columns take them.
+ */
+const OVER_WEIGHT = 0.5;
 
 /**
  * Sets how many columns a line may stick out past the line before it.
@@ -640,6 +670,13 @@ interface BalanceInput {
    */
   readonly afterOrphan: readonly boolean[];
   readonly splitCosts: ReadonlyMap<number, number>;
+
+  /**
+   * Holds the limit that the lines aim to stay within. A line costs `overWeight` times the square
+   * of its columns past it.
+   */
+  readonly preferredLimit: number;
+  readonly overWeight: number;
 }
 
 /**
@@ -710,6 +747,10 @@ function firstAtMost(values: Int32Array, limit: number, from: number): number {
   return low;
 }
 
+function overCost(input: BalanceInput, length: number): number {
+  return input.overWeight * Math.max(0, length - input.preferredLimit) ** 2;
+}
+
 /**
  * Returns the cheapest layouts that end the given line, or `undefined` when the line can't end
  * anywhere. It only looks at the ends that a whole layout can use. The lines before it reach up
@@ -763,7 +804,7 @@ function costsOfLine(
           continue;
         }
 
-        const candidate = before + (target - length) ** 2 + splitCost;
+        const candidate = before + (target - length) ** 2 + splitCost + overCost(input, length);
 
         if (candidate <= cost) {
           cost = candidate;
@@ -817,7 +858,9 @@ function balanceTokens(
     afterOrphan: tokens.map((_, index) => {
       return options.avoidSentenceOrphans && index >= 2 && isOrphan(tokens[index - 2], tokens[index - 1]);
     }),
-    splitCosts: withSentenceStartCosts(tokens, splitCosts, options),
+    splitCosts: withWordCosts(tokens, splitCosts, options),
+    preferredLimit,
+    overWeight: options.avoidArticles ? OVER_WEIGHT : 0,
   };
 
   const targets: number[] = [];
@@ -866,7 +909,8 @@ function balanceTokens(
     const row = rows[count - 1];
 
     for (let start = row.low; start <= row.high; start += 1) {
-      const score = row.costs[start - row.base] + fullness;
+      const lastLength = starts[total] - starts[start] - 1 + (count === 1 ? input.offset : 0);
+      const score = row.costs[start - row.base] + fullness + overCost(input, lastLength);
 
       const improves = score < (best?.cost ?? Infinity) || (score === best?.cost && target > best.target);
 
@@ -924,29 +968,54 @@ function splitCostsOf(tokens: readonly string[], limit: number): Map<number, num
 }
 
 /**
- * Adds `SENTENCE_START_COST` to each line break that leaves the first words of a sentence at the
- * end of the line before it. A break after a whole sentence of that few words costs nothing.
+ * Returns whether a line before the last one ends with an article.
  */
-function withSentenceStartCosts(
+function hasArticle(lines: readonly (readonly string[])[]): boolean {
+  return lines.slice(0, -1).some((line) => ARTICLES.has((line.at(-1) ?? '').toLowerCase()));
+}
+
+/**
+ * Adds the cost of the words that each line break leaves at the end of the line before it:
+ * `SENTENCE_START_COST` for the first words of a sentence, `CLAUSE_START_COST` for the first
+ * word after a comma, and `ARTICLE_COST` for an article. A break after a whole sentence of
+ * that few words costs nothing.
+ */
+function withWordCosts(
   tokens: readonly string[],
   splitCosts: ReadonlyMap<number, number>,
   options: LayoutOptions,
 ): ReadonlyMap<number, number> {
-  if (!options.avoidSentenceOrphans || options.ignoreSentenceStarts) {
+  if (!options.avoidSentenceOrphans || options.endWords === 'none') {
     return splitCosts;
   }
 
   const costs = new Map(splitCosts);
+  const add = (end: number, cost: number) => costs.set(end, (costs.get(end) ?? 0) + cost);
 
   for (const [index, token] of tokens.entries()) {
-    if (!endsSentence(token)) {
+    const next = tokens[index + 1] ?? '';
+
+    if (
+      options.endWords === undefined &&
+      /,["')\]*_]*$/.test(token) &&
+      !CLAUSE_END.test(next) &&
+      !JOINING_WORDS.has(next.toLowerCase())
+    ) {
+      add(index + 2, CLAUSE_START_COST);
+    }
+
+    if (options.avoidArticles && ARTICLES.has(token.toLowerCase())) {
+      add(index + 1, ARTICLE_COST);
+    }
+
+    if (!endsSentence(token) || options.avoidArticles) {
       continue;
     }
 
     const last = Math.min(index + 1 + MAX_SENTENCE_START_WORDS, tokens.length - 1);
 
     for (let end = index + 2; end <= last && !endsSentence(tokens[end - 1]); end += 1) {
-      costs.set(end, (costs.get(end) ?? 0) + SENTENCE_START_COST);
+      add(end, SENTENCE_START_COST);
     }
   }
 
@@ -1002,7 +1071,43 @@ export function layoutTokens(
   return lines;
 }
 
+/**
+ * When the even lines leave an article at the end of a line, the lines may take up to `tolerance`
+ * columns past the limit to keep it with its noun. They are then as even as possible again. Only an
+ * article may buy those columns, so a line may then end with the first words of a sentence.
+ */
 function layoutLines(
+  tokens: readonly string[],
+  firstLimit: number,
+  restLimit: number,
+  options: LayoutOptions,
+): string[][] {
+  const lines = layoutWithinLimit(tokens, firstLimit, restLimit, options);
+
+  if (
+    !options.avoidSentenceOrphans ||
+    options.endWords !== undefined ||
+    options.tolerance === 0 ||
+    options.keepFirstLine ||
+    !hasArticle(lines) ||
+    hasParentheticals(tokens, restLimit, options)
+  ) {
+    return lines;
+  }
+
+  const moved = balanceTokens(
+    tokens,
+    firstLimit + options.tolerance,
+    restLimit + options.tolerance,
+    lines.length,
+    { ...options, avoidArticles: true },
+    restLimit,
+  );
+
+  return moved && !hasArticle(moved) && !hasStep(moved, restLimit - firstLimit) ? moved : lines;
+}
+
+function layoutWithinLimit(
   tokens: readonly string[],
   firstLimit: number,
   restLimit: number,
@@ -1018,6 +1123,7 @@ function layoutLines(
       );
 
       let preserved = wrapTokens(grouped, firstLimit, restLimit, options);
+      let extra = 0;
 
       if (minimumLines === 2 && preserved.length > 2) {
         const wide = wrapTokens(
@@ -1029,13 +1135,24 @@ function layoutLines(
 
         if (wide.length === 2 && !hasWidow(wide)) {
           preserved = wide;
+          extra = options.parentheticalOverflow;
         }
       }
 
       if (preserved.length <= 2 && !hasWidow(preserved)) {
+        // a parenthetical that only fits past the limit keeps the lines as they are
+        const fits = preserved.every(
+          (line, index) => lineLength(line) <= (index === 0 ? firstLimit : restLimit) + extra,
+        );
+
+        const even =
+          preserved.length === 2 && fits
+            ? balanceTokens(grouped, firstLimit + extra, restLimit + extra, 2, options, restLimit)
+            : undefined;
+
         let cursor = 0;
 
-        return preserved.map((line) => {
+        return (even ?? preserved).map((line) => {
           const expanded: string[] = [];
           const length = lineLength(line);
 

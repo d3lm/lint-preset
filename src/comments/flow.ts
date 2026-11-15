@@ -317,6 +317,41 @@ function applyRewraps(analyses: readonly FileAnalysis[], skip: ReadonlySet<strin
   return count;
 }
 
+/**
+ * Analyzes the files again after the agent ran. The line breaks of a comment that the agent changed
+ * are for the tool to choose, so such a comment needs the exact layout of its rewrap (see `exact`).
+ * A comment counts as changed when its file held no comment with the same text before.
+ */
+async function analyzeAfterAgent(
+  project: Project,
+  scope: Scope,
+  before: readonly FileAnalysis[],
+  handedOver: ReadonlySet<string>,
+): Promise<FileAnalysis[]> {
+  const texts = new Map(before.map((analysis) => [analysis.file, new Set(analysis.comments.map(({ text }) => text))]));
+  const current = await project.analyze(scope);
+
+  return Promise.all(
+    current.map(async (analysis) => {
+      const known = texts.get(analysis.file) ?? new Set<string>();
+
+      if (!handedOver.has(analysis.file) || analysis.comments.every(({ text }) => known.has(text))) {
+        return analysis;
+      }
+
+      const exact = await project.analyzeFile(analysis.absolute, 'all', { exact: true });
+
+      const comments = analysis.comments.map((comment) => {
+        const strict = exact.comments.find(({ startLine }) => startLine === comment.startLine);
+
+        return known.has(comment.text) || strict?.text !== comment.text ? comment : strict;
+      });
+
+      return { ...analysis, comments };
+    }),
+  );
+}
+
 export async function runFlow(project: Project, scope: Scope, options: FlowOptions): Promise<FlowSummary> {
   const reporter = options.reporter ?? SILENT_REPORTER;
   const analyses = await project.analyze(scope);
@@ -446,7 +481,7 @@ export async function runFlow(project: Project, scope: Scope, options: FlowOptio
     })
     .map((analysis) => analysis.file);
 
-  const rewrapped = applyRewraps(await project.analyze(scope), new Set(codeChanged));
+  const rewrapped = applyRewraps(await analyzeAfterAgent(project, scope, analyses, handedOver), new Set(codeChanged));
 
   return {
     sentToAgent: comments.length,

@@ -114,7 +114,8 @@ export interface CommentsConfig {
 
   /**
    * Sets how many columns prose lines may go past `width` when that saves a line in a paragraph
-   * of three or more lines. A paragraph that already has the layout for a wider `width`, up
+   * of three or more lines, or keeps an article like `the` at the end of a line together with
+   * its noun on the next line. A paragraph that already has the layout for a wider `width`, up
    * to `width` plus this many columns, also passes as it is. So does a paragraph with as many
    * lines as the rewrap whose lines, the last aside, are at most this many columns shorter
    * than the shortest of them in the rewrap, and end at most this many columns past `width`.
@@ -128,10 +129,12 @@ export interface CommentsConfig {
    * `...the module. This` or `...reflows (the` followed by the rest on the next line. The same
    * goes for the first word after a semicolon or colon, but not after a comma, so a line may
    * end with `...the paths, and`. A paragraph of two lines also ends its first line with a
-   * sentence when the rest fits on the second line and is no longer than the first, instead
-   * of with the start of the next sentence, like `...the module. This one`. Other lines avoid
+   * sentence when the rest fits on the second line and is no longer than the first, instead of
+   * with the start of the next sentence, like `...the module. This one`. Other lines avoid
    * ending with the first two words of a sentence, like `...opens. It allocates`, unless that
-   * makes them much less even. Defaults to `true`.
+   * makes them much less even. Lines also avoid ending with the first word after a comma, like
+   * `...a symlink, so`, unless it is `and`, `or`, or `nor`, and with an article like `the`,
+   * for which they may use the `tolerance`. Defaults to `true`.
    */
   readonly avoidSentenceOrphans?: boolean;
 

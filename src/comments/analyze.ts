@@ -65,6 +65,14 @@ export interface AnalyzeOptions extends WrapOptions {
    * Whether to report prose style issues like semicolons, em-dashes, and section banners.
    */
   readonly style: boolean;
+
+  /**
+   * Whether a paragraph needs the exact layout of its rewrap, so the tolerance never accepts one
+   * with the layout for a wider width or with lines close to the rewrap. Its layout still uses the
+   * tolerance. The flow sets it for the comments that the agent changed, whose line breaks are for
+   * the tool to choose.
+   */
+  readonly exact?: boolean;
 }
 
 export type IssueType = LineIssueType | StyleIssueType;
@@ -1110,6 +1118,20 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
   const matchesLayout = sameLayout(wrapped, currentLines);
   const isVerdict = (issue: LineIssue): boolean => ISSUE_TIERS[issue.type] === 'verdict';
 
+  let fewerEndWords: { even: string[][]; wrapped: string[][] }[] | undefined;
+
+  /**
+   * Returns the layouts where fewer words at the end of a line cost extra, first the one where only
+   * the first words of a sentence do, and then the one where no word does.
+   */
+  const layoutsWithFewerEndWords = (): { even: string[][]; wrapped: string[][] }[] => {
+    fewerEndWords ??= (['sentences', 'none'] as const)
+      .map((endWords) => settle({ ...layoutOptions, endWords }))
+      .filter((free) => 'wrapped' in free);
+
+    return fewerEndWords;
+  };
+
   const lineIssues: LineIssue[] = [];
   const overflow: IssueReport[] = options.maxWidth === undefined ? [] : overflowIssues(paragraph.lines, options);
 
@@ -1140,10 +1162,10 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
       return !('wrapped' in free) || sameLayout(free.wrapped, currentLines);
     };
 
-    const keepsOnlySentenceStarts = (): boolean => {
-      const free = settle({ ...layoutOptions, ignoreSentenceStarts: true });
-
-      return 'wrapped' in free && (sameLayout(free.even, currentLines) || sameLayout(free.wrapped, currentLines));
+    const keepsOnlyEndWords = (): boolean => {
+      return layoutsWithFewerEndWords().some((free) => {
+        return sameLayout(free.even, currentLines) || sameLayout(free.wrapped, currentLines);
+      });
     };
 
     /**
@@ -1204,10 +1226,11 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
       );
 
       /**
-       * Lines that only miss the break after a sentence, or end with the first words of one, are a
-       * hint, since a heuristic decides where a sentence ends.
+       * Lines that only miss the break after a sentence, or end with the first words of one,
+       * the first word after a comma, or an article, are a hint, since a heuristic decides
+       * where a sentence or a clause ends and which words are articles.
        */
-      if (lineIssues.length === 0 && (sameLayout(even, currentLines) || keepsOnlySentenceStarts())) {
+      if (lineIssues.length === 0 && (sameLayout(even, currentLines) || keepsOnlyEndWords())) {
         lineIssues.push({ type: 'orphan', line });
       } else if (lineIssues.length === 0) {
         lineIssues.push(
@@ -1256,28 +1279,35 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
    * past the width, unless the same line of the suggestion ends past it too. The shortest line
    * is the measure, since one word that moves shifts every line after it. No line may end inside
    * text that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
+   *
+   * Which words a line ends with is a heuristic, so lines close to a rewrap where fewer of those
+   * words cost extra are fine too.
    */
   const staysNearLayout = (): boolean => {
-    if (
-      layoutOptions.tolerance === 0 ||
-      currentLines.length !== wrapped.length ||
-      splitTokenLine(currentLines, units) !== -1
-    ) {
+    if (layoutOptions.tolerance === 0 || splitTokenLine(currentLines, units) !== -1) {
       return false;
     }
 
-    const shortest = Math.min(...wrapped.slice(0, -1).map((words) => words.join(' ').length));
+    const isNear = (layout: readonly (readonly string[])[]): boolean => {
+      if (currentLines.length !== layout.length) {
+        return false;
+      }
 
-    return currentLines.every((words, position) => {
-      const length = words.join(' ').length;
-      const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
-      const isLast = position === currentLines.length - 1;
+      const shortest = Math.min(...layout.slice(0, -1).map((words) => words.join(' ').length));
 
-      return (
-        (isLast || length >= shortest - layoutOptions.tolerance) &&
-        length <= Math.max(wrapped[position].join(' ').length, limit)
-      );
-    });
+      return currentLines.every((words, position) => {
+        const length = words.join(' ').length;
+        const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
+        const isLast = position === currentLines.length - 1;
+
+        return (
+          (isLast || length >= shortest - layoutOptions.tolerance) &&
+          length <= Math.max(layout[position].join(' ').length, limit)
+        );
+      });
+    };
+
+    return isNear(wrapped) || layoutsWithFewerEndWords().some((free) => isNear(free.wrapped));
   };
 
   const hasVerdict = lineIssues.some((issue) => isVerdict(issue));
@@ -1292,7 +1322,7 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
    * A paragraph that only has hints keeps them and its suggestion, since a hint is for the agent to
    * decide. Only verdicts go, and the suggestion then keeps the lines as they are.
    */
-  const accepted = hasVerdict && (matchesWiderLayout() || (onlyUnbalanced && staysNearLayout()));
+  const accepted = !options.exact && hasVerdict && (matchesWiderLayout() || (onlyUnbalanced && staysNearLayout()));
   const suggested = accepted ? currentLines : wrapped;
 
   const suggestion = suggested.map(

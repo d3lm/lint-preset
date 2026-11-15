@@ -295,9 +295,9 @@ describe('analyzeSource', () => {
         // the layout for the width itself
         const preferred = jsdoc(
           'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and',
-          '`RelayAnyDatagram`. It owns the client-to-remote queue and its pump, the backend closed watcher,',
-          'and the idempotent death path, so a lifecycle fix lands in both channel kinds at once. Only the',
-          'per-kind frame validation and the recv-to-frame mapping stay in the concrete classes.',
+          '`RelayAnyDatagram`. It owns the client-to-remote queue and its pump, the backend closed',
+          'watcher, and the idempotent death path, so a lifecycle fix lands in both channel kinds at once.',
+          'Only the per-kind frame validation and the recv-to-frame mapping stay in the concrete classes.',
         );
 
         it('accepts the layout for a width within the tolerance, and keeps it as it is', () => {
@@ -342,7 +342,7 @@ describe('analyzeSource', () => {
         });
 
         it('accepts a paragraph with the layout for no width whose lines stay within the tolerance', () => {
-          // lines of 105, 98, 94, and 73 columns, where the suggestion has 85, 99, 98, and 88
+          // lines of 105, 98, 94, and 73 columns, where the suggestion has 85, 90, 98, and 97
           const moved = jsdoc(
             'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and `RelayAnyDatagram`.',
             'It owns the client-to-remote queue and its pump, the backend closed watcher, and the idempotent',
@@ -367,14 +367,17 @@ describe('analyzeSource', () => {
             'is omitted, it also sets a legacy hard limit of `width + tolerance`.',
           );
 
-          expect(issuesOf(stranded, { ...narrow, width: 84, tolerance: 3 })).toEqual([]);
-          expect(issuesOf(stranded, narrow)).toEqual(['3:orphan:hint']);
+          expect(issuesOf(stranded, { ...narrow, width: 84, tolerance: 0 })).toEqual([]);
+
+          // the first line ends with an article too, which the tolerance moves to the noun after it
+          expect(issuesOf(stranded, { ...narrow, width: 84, tolerance: 3 })).toEqual(['2:orphan:hint']);
+          expect(issuesOf(stranded, narrow)).toEqual(['2:orphan:hint']);
 
           expect(fix(stranded, narrow)).toBe(
             jsdoc(
-              'Sets how many columns prose lines may go past `width` when that saves a line in a',
-              'paragraph of three or more lines. It never goes past `maxWidth`. When `maxWidth` is',
-              'omitted, it also sets a legacy hard limit of `width + tolerance`.',
+              'Sets how many columns prose lines may go past `width` when that saves a line in',
+              'a paragraph of three or more lines. It never goes past `maxWidth`. When `maxWidth`',
+              'is omitted, it also sets a legacy hard limit of `width + tolerance`.',
             ),
           );
         });
@@ -695,8 +698,8 @@ describe('analyzeSource', () => {
 
     expect(fix(source, { width: 120 })).toBe(stripIndent`
       /**
-       * Runs the preset's comment rules on a source, with the options from src/oxlint.ts and src/configs/javascript.ts, so
-       * that every comment the eval treats as valid also passes linting.
+       * Runs the preset's comment rules on a source, with the options from src/oxlint.ts and src/configs/javascript.ts,
+       * so that every comment the eval treats as valid also passes linting.
        */
     `);
   });
@@ -830,10 +833,18 @@ describe('analyzeSource', () => {
       return comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}`);
     };
 
-    it('is fine as it is when no more words fit on the line', () => {
+    it('only hints when no more words fit on the line, and moves the word to the next line', () => {
       // `selected` would make the first line one column longer than the width
-      expect(issuesOf(source, { width: 97 })).toEqual([]);
-      expect(fix(source, { width: 97 })).toBe(source);
+      expect(issuesOf(source, { width: 97 })).toEqual(['2:orphan']);
+
+      expect(fix(source, { width: 97 })).toBe(stripIndent`
+        /**
+         * Bottom bar of the list node holding the add button, the selection filter dropdown,
+         * the selected item count with the select mode toggle, and the media view controls.
+         */
+      `);
+
+      expect(issuesOf(source, { width: 97, avoidSentenceOrphans: false })).toEqual([]);
     });
 
     it('has no hint when more words fit on the line, only the verdict of a line that ends early', () => {
@@ -2389,30 +2400,26 @@ describe('rewrap invariants', () => {
     }
   });
 
-  it('lays out a paragraph whose only punctuation is commas the same with and without the orphan rule', () => {
-    const text =
-      'Bottom bar of the list node holding the add button, the selection filter dropdown, the selected item count with the select mode toggle, and the media view controls, which the list shows below its rows, and which it hides while the rows are loading';
+  it('only hints at the layout without the orphan rule of a paragraph whose only punctuation is commas', () => {
+    const source = jsdoc(
+      'Bottom bar of the list node holding the add button, the selection filter dropdown, the selected item count with the select mode toggle, and the media view controls, which the list shows below its rows, and which it hides while the rows are loading',
+    );
 
-    const widthsThatDiffer = (source: string): number[] => {
-      const widths: number[] = [];
+    const widthsWithVerdicts: number[] = [];
 
-      for (let width = 20; width <= 110; width += 1) {
-        const maxWidth = width + 20;
+    for (let width = 20; width <= 110; width += 1) {
+      const maxWidth = width + 20;
 
-        for (const settings of [{ width }, { width, maxWidth }, { width, maxWidth, tolerance: 5 }]) {
-          if (fix(source, settings) !== fix(source, { ...settings, avoidSentenceOrphans: false })) {
-            widths.push(width);
-          }
+      for (const settings of [{ width }, { width, maxWidth }, { width, maxWidth, tolerance: 5 }]) {
+        const plain = fix(source, { ...settings, avoidSentenceOrphans: false });
+
+        if (analyzeSource(plain, 'file.ts', { ...options, ...settings }).some((comment) => hasVerdictIssues(comment))) {
+          widthsWithVerdicts.push(width);
         }
       }
+    }
 
-      return widths;
-    };
-
-    expect(widthsThatDiffer(jsdoc(text))).toEqual([]);
-
-    // the rule does move words of the same paragraph once a sentence ends in it
-    expect(widthsThatDiffer(jsdoc(text.replace('controls, which', 'controls. It')))).not.toEqual([]);
+    expect(widthsWithVerdicts).toEqual([]);
   });
 
   describe('paragraphs without a rewrap that reads as the same prose', () => {
@@ -3020,8 +3027,8 @@ describe('issue tiers', () => {
 
       expect(rewrapComment(commentOf(source, wide))).toBe(
         jsdoc(
-          'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes. The 20-byte IP header plus the',
-          '8-byte UDP header leave 65507 bytes of payload.',
+          'Caps a single UDP payload. IPv4 bounds a datagram at 65535 bytes. The 20-byte IP header plus',
+          'the 8-byte UDP header leave 65507 bytes of payload.',
         ).trimEnd(),
       );
     });
