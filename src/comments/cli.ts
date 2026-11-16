@@ -41,42 +41,54 @@ Targets are files, directories, file:line, or file:start-end. Without targets, o
 overlapping uncommitted changes (and untracked files) are considered.
 
 Options:
-  --base <ref>      Consider changes since the merge base with <ref>
-  --whole-files     Consider every comment in the changed files, not only comments on changed lines
-  --repo            Consider every file in the repository
-  --suspicious      Only comments with layout issues (overflow, early line ends, last lines of one or two words)
-                    or hints (possible orphans, em-dashes, banners, ...). For agent and hook (the default), only
-                    comments with hints or with issues in parts the tool never rewraps, a triage, not a full review
-  --failing         agent, hook: hand the agent only the comments that fail check, and none that only have hints
-  --all             agent, hook: hand every comment in scope to the agent for a full review of its wording
-  --verbose         agent, hook: print every agent's reply (otherwise a terminal offers to open them)
-  --no-interactive  agent: show the agents while they run, then exit without offering to open their replies
-  --json            Print JSON
-  --config <path>   Use this config file instead of searching for one
-  --cwd <dir>       Run as if started in <dir> (targets and --config resolve against it)
-  --host <host>     hook: the agent running the hook (cursor, claude, codex)
-  --runner <name>   agent, hook: the agent CLI to spawn (claude, codex, cursor)
-  --mode <mode>     hook: agent, report, or off
-  -h, --help        Show this help
+  --base <ref>            Consider changes since the merge base with <ref>
+  --whole-files           Consider every comment in the changed files, not only comments on changed lines
+  --repo                  Consider every file in the repository
+  --include <glob>        Only consider matching files, repeatable. Replaces include from the config file
+  --ignore <glob>         Skip matching files, repeatable. Adds to ignore from the config file
+  --suspicious            Only comments with layout issues (overflow, early line ends, last lines of one or two
+                          words) or hints (possible orphans, em-dashes, banners, ...). For agent and hook (the
+                          default), only comments with hints or with issues in parts the tool never rewraps, a
+                          triage, not a full review
+  --json                  Print JSON
+  --config <path>         Use this config file instead of searching for one
+  --cwd <dir>             Run as if started in <dir> (targets and --config resolve against it)
+  -h, --help              Show this help
 
-Config overrides (take precedence over the config file):
+Agent and hook options:
+  --failing               Hand the agent only the comments that fail check, and none that only have hints
+  --all                   Hand every comment in scope to the agent for a full review of its wording
+  --runner <name>         Agent CLI to spawn (claude, codex, cursor)
+  --model <name>          Model for the agent
+  --timeout <seconds>     How long to wait for each agent (default: 300)
+  --batch-size <n>        Most comments per agent (default: 20)
+  --max-files <n>         Most files per agent (default: 10)
+  --max-agents <n>        Most agents running at once (default: 6)
+  --instructions <text>   Extra instructions appended to the rules, instead of those from the config file
+  -p, --prompt <text>     More instructions appended after those from the config file or --instructions,
+                          e.g. -p "Reword the comments to read more clearly"
+  --verbose               Print every agent's reply (otherwise a terminal offers to open them)
+  --no-interactive        Show the agents while they run in a terminal, then exit without offering to open
+                          their replies
+
+Hook options:
+  --host <host>           Agent running the hook (cursor, claude, codex)
+  --mode <mode>           Hook mode (agent, report, or off)
+
+Layout options:
   --width <n>             Preferred comment line length
   --max-width <n>         Hard limit for prose (default: 120, never below width)
   --single-line-width <n> Longest line a one-paragraph comment may stay on (default: 120)
-  --tolerance <n>         Columns prose may go past width to save a line, within max-width (default: 0).
-                          A paragraph that has the layout for a width up to that much wider also passes
+  --tolerance <n>         Columns prose may go past width, within max-width, to save a line or even out the
+                          lines (default: 0). A paragraph that has the layout for a width up to that much
+                          wider also passes.
+                          The last line of a paragraph never takes them to stick out past the lines before it
   --[no-]orphans          Keep a sentence's first word off the end of a line, and end the first of two lines
                           with a sentence when the second is no longer than the first (default: on)
   --[no-]style            Look for possible semicolons, em-dashes, dashes, label colons, emphasis, and banners
                           as hints (default: on). The agent's rules apply either way
-  --include <glob>        Only consider matching files, repeatable. Replaces include from the config file
-  --ignore <glob>         Skip matching files, repeatable. Adds to ignore from the config file
-  --model <name>          agent, hook: model for the agent
-  --timeout <seconds>     agent, hook: how long to wait for each agent (default: 300)
-  --batch-size <n>        agent, hook: most comments per agent (default: 20)
-  --max-files <n>         agent, hook: most files per agent (default: 10)
-  --max-agents <n>        agent, hook: most agents running at once (default: 6)
-  --instructions <text>   agent, hook: extra instructions appended to the rules
+
+Options that match a setting in the config file take precedence over it.
 `.trim();
 
 const RUNNERS = new Set<string>(['claude', 'codex', 'cursor']);
@@ -94,6 +106,7 @@ const OPTIONS = {
   'max-files': { type: 'string' },
   'max-agents': { type: 'string' },
   instructions: { type: 'string' },
+  prompt: { type: 'string', short: 'p' },
   base: { type: 'string' },
   'whole-files': { type: 'boolean' },
   repo: { type: 'boolean' },
@@ -176,6 +189,12 @@ function defined<T extends object>(object: T): Partial<T> {
   return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
 
+function joinInstructions(...parts: (string | undefined)[]): string | undefined {
+  const present = parts.map((part) => part?.trim()).filter((part) => part !== undefined && part !== '');
+
+  return present.length > 0 ? present.join('\n\n') : undefined;
+}
+
 function applyOverrides(config: CommentsConfig, values: Values): CommentsConfig {
   const overrides = defined({
     width: parseInteger('width', values.width, 1),
@@ -194,7 +213,9 @@ function applyOverrides(config: CommentsConfig, values: Values): CommentsConfig 
     batchSize: parseInteger('batch-size', values['batch-size'], 1),
     maxFiles: parseInteger('max-files', values['max-files'], 1),
     maxAgents: parseInteger('max-agents', values['max-agents'], 1),
-    instructions: values.instructions,
+    instructions: values.prompt
+      ? joinInstructions(values.instructions ?? config.agent?.instructions, values.prompt)
+      : values.instructions,
   });
 
   return { ...config, ...overrides, agent: { ...config.agent, ...agent } };

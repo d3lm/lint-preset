@@ -16,6 +16,11 @@ function jsdoc(...lines: string[]): string {
   return `/**\n${lines.map((line) => (line ? ` * ${line}` : ' *')).join('\n')}\n */\n`;
 }
 
+// a JSDoc comment on a class member, two spaces in
+function member(...lines: string[]): string {
+  return `class A {\n  /**\n${lines.map((line) => `   * ${line}`).join('\n')}\n   */\n  b = 1;\n}\n`;
+}
+
 function indented(source: string): string {
   return source
     .split('\n')
@@ -292,14 +297,6 @@ describe('analyzeSource', () => {
           'the recv-to-frame mapping stay in the concrete classes.',
         );
 
-        // the layout for the width itself
-        const preferred = jsdoc(
-          'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and',
-          '`RelayAnyDatagram`. It owns the client-to-remote queue and its pump, the backend closed',
-          'watcher, and the idempotent death path, so a lifecycle fix lands in both channel kinds at once.',
-          'Only the per-kind frame validation and the recv-to-frame mapping stay in the concrete classes.',
-        );
-
         it('accepts the layout for a width within the tolerance, and keeps it as it is', () => {
           expect(issuesOf(wider, { ...settings, width: 105, tolerance: 0 })).toEqual([]);
           expect(issuesOf(wider, settings)).toEqual([]);
@@ -313,24 +310,30 @@ describe('analyzeSource', () => {
           expect(fix(wider, legacy)).toBe(wider);
         });
 
-        it('accepts it when its lines happen to stay within the width', () => {
-          const within = jsdoc(
-            'Records the state of every file with uncommitted changes, to compare it with a later snapshot.',
-            'Returns `undefined` outside of a git repository, where only reading every file would show',
-            'which ones changed.',
-          );
+        // the layout for the width itself, with lines of 85, 99, 98, and 88 columns
+        const evenedLines = [
+          'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and',
+          '`RelayAnyDatagram`. It owns the client-to-remote queue and its pump, the backend closed watcher,',
+          'and the idempotent death path, so a lifecycle fix lands in both channel kinds at once. Only the',
+          'per-kind frame validation and the recv-to-frame mapping stay in the concrete classes.',
+        ];
 
-          expect(issuesOf(within, { ...settings, width: 105, tolerance: 0 })).toEqual([]);
-          expect(issuesOf(within, settings)).toEqual([]);
-          expect(issuesOf(within, { ...settings, tolerance: 0 })).toEqual(['2:unbalanced:verdict']);
+        const evened = jsdoc(...evenedLines);
+
+        it('accepts the layout for the width itself, since the tolerance is room that the rewrap may take', () => {
+          // the lines of the layout for a width of 105 end closer together
+          expect(fix(jsdoc(evenedLines.join(' ')), settings)).toBe(wider);
+          expect(issuesOf(evened, { ...settings, tolerance: 0 })).toEqual([]);
+          expect(issuesOf(evened, settings)).toEqual([]);
+          expect(fix(evened, settings)).toBe(evened);
         });
 
-        it('reports it when the tolerance is too small, and still wraps to the width itself', () => {
+        it('reports it when the tolerance is too small, and evens the lines within the smaller tolerance', () => {
           const small = { ...settings, tolerance: 4 };
 
           expect(issuesOf(wider, small)).toEqual(['2:wide:verdict']);
-          expect(fix(wider, small)).toBe(preferred);
-          expect(fix(preferred, settings)).toBe(preferred);
+          expect(fix(wider, small)).toBe(evened);
+          expect(fix(evened, small)).toBe(evened);
         });
 
         it('reports it as overflow when the hard maximum is too small, however large the tolerance', () => {
@@ -342,7 +345,7 @@ describe('analyzeSource', () => {
         });
 
         it('accepts a paragraph with the layout for no width whose lines stay within the tolerance', () => {
-          // lines of 105, 98, 94, and 73 columns, where the suggestion has 85, 90, 98, and 97
+          // lines of 105, 98, 94, and 73 columns, where the layout for the width itself has 85, 99, 98, and 88
           const moved = jsdoc(
             'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and `RelayAnyDatagram`.',
             'It owns the client-to-remote queue and its pump, the backend closed watcher, and the idempotent',
@@ -354,32 +357,7 @@ describe('analyzeSource', () => {
           expect(fix(moved, settings)).toBe(moved);
 
           expect(issuesOf(moved, { ...settings, tolerance: 4 })).toEqual(['2:wide:verdict']);
-          expect(fix(moved, { ...settings, tolerance: 4 })).toBe(preferred);
-        });
-
-        it('keeps a hint and its suggestion, since a hint is for the agent to decide', () => {
-          const narrow = { width: 82, maxWidth: 102, tolerance: 5 };
-
-          // the layout for a width of 84, whose second line ends with the first two words of a sentence
-          const stranded = jsdoc(
-            'Sets how many columns prose lines may go past `width` when that saves a line in a',
-            'paragraph of three or more lines. It never goes past `maxWidth`. When `maxWidth`',
-            'is omitted, it also sets a legacy hard limit of `width + tolerance`.',
-          );
-
-          expect(issuesOf(stranded, { ...narrow, width: 84, tolerance: 0 })).toEqual([]);
-
-          // the first line ends with an article too, which the tolerance moves to the noun after it
-          expect(issuesOf(stranded, { ...narrow, width: 84, tolerance: 3 })).toEqual(['2:orphan:hint']);
-          expect(issuesOf(stranded, narrow)).toEqual(['2:orphan:hint']);
-
-          expect(fix(stranded, narrow)).toBe(
-            jsdoc(
-              'Sets how many columns prose lines may go past `width` when that saves a line in',
-              'a paragraph of three or more lines. It never goes past `maxWidth`. When `maxWidth`',
-              'is omitted, it also sets a legacy hard limit of `width + tolerance`.',
-            ),
-          );
+          expect(fix(moved, { ...settings, tolerance: 4 })).toBe(evened);
         });
       });
 
@@ -538,6 +516,138 @@ describe('analyzeSource', () => {
               ),
             );
           });
+        });
+      });
+
+      describe('a last line that would stick out', () => {
+        const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+        // the first line can't take `settlement.`, so two lines have 94 and 101 columns
+        const provider = [
+          "Holds one provider request observed by the studio's external file service, from dispatch to",
+          "settlement. These mirror the kernel's `ExternalRequest` shapes with the request id kept host-side.",
+        ];
+
+        const providerWithinWidth = jsdoc(
+          "Holds one provider request observed by the studio's external file service, from",
+          "dispatch to settlement. These mirror the kernel's `ExternalRequest` shapes with",
+          'the request id kept host-side.',
+        );
+
+        // two lines of 97 and 102 columns
+        const bytes = [
+          'Heuristically decide whether bytes are binary rather than text. A NUL byte or an invalid UTF-8',
+          'sequence marks the content as binary, which mirrors how tools like `git` and `grep` classify files.',
+        ];
+
+        it('saves no line when the last line would end more than the tolerance after the lines before it', () => {
+          expect(fix(jsdoc(provider.join(' ')), settings)).toBe(providerWithinWidth);
+          expect(issuesOf(providerWithinWidth, settings)).toEqual([]);
+          expect(fix(providerWithinWidth, settings)).toBe(providerWithinWidth);
+
+          // the lines are those of a paragraph without a tolerance
+          expect(fix(jsdoc(provider.join(' ')), { ...settings, tolerance: 0 })).toBe(providerWithinWidth);
+        });
+
+        it('still saves the line when the last line ends at most the tolerance after the lines before it', () => {
+          expect(fix(jsdoc(bytes.join(' ')), settings)).toBe(jsdoc(...bytes));
+          expect(issuesOf(jsdoc(...bytes), settings)).toEqual([]);
+
+          // the last line ends 5 columns after the first, which one column of tolerance less no longer covers
+          expect(fix(jsdoc(bytes.join(' ')), { ...settings, tolerance: 4 })).toBe(
+            jsdoc(
+              'Heuristically decide whether bytes are binary rather than text. A NUL byte or an',
+              'invalid UTF-8 sequence marks the content as binary, which mirrors how tools like',
+              '`git` and `grep` classify files.',
+            ),
+          );
+        });
+
+        it('reports the last line as wide, although the paragraph has the layout for a wider width', () => {
+          const saved = jsdoc(...provider);
+
+          expect(issuesOf(saved, { ...settings, width: 101, tolerance: 0 })).toEqual([]);
+          expect(issuesOf(saved, settings)).toEqual(['3:wide:verdict']);
+          expect(fix(saved, settings)).toBe(providerWithinWidth);
+
+          // a last line that ends 5 columns after the first is only wide with less than 5 columns of tolerance
+          expect(issuesOf(jsdoc(...bytes), { ...settings, tolerance: 4 })).toEqual(['3:wide:verdict']);
+          expect(issuesOf(jsdoc(...bytes), settings)).toEqual([]);
+          expect(fix(jsdoc(...bytes), settings)).toBe(jsdoc(...bytes));
+        });
+
+        it('keeps an article at the end of a line when moving it would leave a last line that sticks out', () => {
+          const narrow = { width: 80, maxWidth: 100, tolerance: 3 };
+
+          // without the articles at the ends of its lines, the last line has 82 columns, 4 more than the second
+          const moved = jsdoc(
+            'Every regular file created on the volume keeps its bytes at the provider,',
+            'so these writes show up as provider write requests in the External tab, and',
+            "the files' stable ids appear in the provider store with the volume's id prefix.",
+          );
+
+          const kept = jsdoc(
+            'Every regular file created on the volume keeps its bytes at the provider, so',
+            'these writes show up as provider write requests in the External tab, and the',
+            "files' stable ids appear in the provider store with the volume's id prefix.",
+          );
+
+          expect(fix(moved, narrow)).toBe(kept);
+          expect(issuesOf(moved, narrow)).toEqual(['4:wide:verdict']);
+          expect(issuesOf(kept, narrow)).toEqual([]);
+          expect(fix(kept, narrow)).toBe(kept);
+
+          // one more column of tolerance covers the 4 columns, though the rewrap keeps the more even lines
+          expect(issuesOf(moved, { ...narrow, tolerance: 4 })).toEqual([]);
+          expect(fix(kept, { ...narrow, tolerance: 4 })).toBe(kept);
+        });
+      });
+
+      describe('the right edge', () => {
+        const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+        function expectLayout(lines: string[]): void {
+          expect(fix(member(lines.join(' ')), settings)).toBe(member(...lines));
+          expect(issuesOf(member(...lines), settings)).toEqual([]);
+          expect(fix(member(...lines), settings)).toBe(member(...lines));
+        }
+
+        it('keeps lines that end closer together, even with an article at the end of one', () => {
+          // lines of 88, 90, 89, and 69 columns, where moving `the` down gives 88, 86, and 89
+          expectLayout([
+            'Holds the longest reference video the model accepts in seconds, for models that cap',
+            "the reference video's length or bill it on top of the output. The client measures the",
+            'connected video and sends its length with the request so the server can check it and',
+            "the charge can include it when the model's price table bills it.",
+          ]);
+        });
+
+        it('prefers lines that end closer together to lines that are only fuller', () => {
+          // lines of 87, 86, and 77 columns, where filling the second line gives 87 and 90
+          expectLayout([
+            'Sets how many columns a line may exceed its limit before it counts as overflowing.',
+            'A layout also uses those columns when that saves a line, or keeps an article with',
+            'its noun, unless the last line then sticks out past the lines before it.',
+          ]);
+        });
+
+        it('still reports the layout for the width when the tolerance saves a line', () => {
+          // the layout for the width itself, while the tolerance fits the words on two lines of 99 and 101 columns
+          const source = jsdoc(
+            'A copy whose clone the provider rejects falls back to copying the whole validated count,',
+            'not the shorter prefix it tried to share, and releases both claims before the copy claims',
+            'each file again.',
+          );
+
+          expect(issuesOf(source, { ...settings, tolerance: 0 })).toEqual([]);
+          expect(issuesOf(source, settings)).toEqual(['2:underfill:verdict', '3:underfill:verdict']);
+
+          expect(fix(source, settings)).toBe(
+            jsdoc(
+              'A copy whose clone the provider rejects falls back to copying the whole validated count, not the',
+              'shorter prefix it tried to share, and releases both claims before the copy claims each file again.',
+            ),
+          );
         });
       });
     });
@@ -1124,8 +1234,8 @@ describe('analyzeSource', () => {
   it('rewraps prose JSDoc tags whose type or link holds pipes, instead of treating them as a table', () => {
     const source = stripIndent`
       /**
-       * @param {string | number | null} value - The value to convert,
-       * which is {@link format | formatted} first.
+       * @param {string | number | null} value - The value to convert, which
+       * is {@link format | formatted} first.
        */
     `;
 
@@ -1135,8 +1245,8 @@ describe('analyzeSource', () => {
 
     expect(fix(source)).toBe(stripIndent`
       /**
-       * @param {string | number | null} value - The value to convert, which
-       * is {@link format | formatted} first.
+       * @param {string | number | null} value - The value to convert,
+       * which is {@link format | formatted} first.
        */
     `);
   });
@@ -1398,7 +1508,7 @@ describe('analyzeSource', () => {
       expect(fix(jsdoc(long), { ...narrow, singleLineWidth: 60 })).toBe(fix(jsdoc(long), { ...options, width: 40 }));
 
       expect(fix(jsdoc(text), { ...narrow, singleLineWidth: 60 })).toBe(
-        jsdoc('Side-channel perf fields beyond the', 'built-ins (latency_s etc.).'),
+        jsdoc('Side-channel perf fields beyond', 'the built-ins (latency_s etc.).'),
       );
     });
 
@@ -1406,7 +1516,7 @@ describe('analyzeSource', () => {
       const source = jsdoc(text, '', 'A second paragraph.');
 
       expect(fix(source, narrow)).toBe(
-        jsdoc('Side-channel perf fields beyond the', 'built-ins (latency_s etc.).', '', 'A second paragraph.'),
+        jsdoc('Side-channel perf fields beyond', 'the built-ins (latency_s etc.).', '', 'A second paragraph.'),
       );
     });
 
@@ -2463,8 +2573,8 @@ describe('rewrap invariants', () => {
       // an even wrap has the line `finds (relative to the root) first;`, which reads as code
       expect(fixed).toBe(
         jsdoc(
-          'The loader reads each file below the',
-          'root and resolves the paths that it finds',
+          'The loader reads each file below the root',
+          'and resolves the paths that it finds',
           '(relative to the root) first; then it',
           'parses them and returns the contents of',
           'each file to the caller.',
@@ -2705,8 +2815,43 @@ describe('rewrap invariants', () => {
     expect(checked).toBe(600);
   });
 
+  /**
+   * Returns the 1-based lines of each paragraph of two or more lines, with whether its last
+   * line sticks out, and whether it has more lines than its rewrap. Such a last line ends past
+   * the width, within the tolerance, and more than the tolerance after the longest line before
+   * it. The lengths hold the comment prefix and the indentation, which are the same on every
+   * line of a paragraph.
+   */
+  function paragraphLines(
+    source: string,
+    overrides: Partial<AnalyzeOptions>,
+  ): { lines: number[]; sticksOut: boolean; longerThanRewrap: boolean }[] {
+    const { width, tolerance } = { ...options, ...overrides };
+
+    return analyzeSource(source, 'file.ts', { ...options, ...overrides, exact: true }).flatMap((comment) =>
+      comment.paragraphs
+        .filter((paragraph) => paragraph.reflowable && paragraph.endLine > paragraph.startLine)
+        .map((paragraph) => {
+          const lines = Array.from(
+            { length: paragraph.endLine - paragraph.startLine + 1 },
+            (_, offset) => paragraph.startLine + offset,
+          );
+
+          const lengths = lines.map((line) => comment.lengths[line - comment.startLine]);
+          const last = lengths.at(-1) ?? 0;
+          const before = Math.max(...lengths.slice(0, -1));
+
+          return {
+            lines,
+            sticksOut: last > width && last <= width + tolerance && last > before + tolerance,
+            longerThanRewrap: lines.length > (paragraph.suggestion?.length ?? Infinity),
+          };
+        }),
+    );
+  }
+
   it(
-    'has no verdict for the layout for any width within the tolerance, and keeps it as it is',
+    'has no verdict for the layout for the width or any width within the tolerance, and keeps it as it is',
     { timeout: 30_000 },
     () => {
       const { random, between, comment } = randomComments(4099, { extra: ['(one)', 'b)'] });
@@ -2715,12 +2860,14 @@ describe('rewrap invariants', () => {
       const NO_VERDICT = /:(?:orphan|split-parenthetical|overflow)$/;
 
       let checked = 0;
+      let stickingOut = 0;
+      let longer = 0;
 
       for (let run = 0; run < 400; run += 1) {
         const source = comment();
         const width = between(16, 100);
         const tolerance = between(1, 8);
-        const extra = between(1, tolerance);
+        const extra = between(0, tolerance);
 
         const overrides: Partial<AnalyzeOptions> = {
           width,
@@ -2731,9 +2878,24 @@ describe('rewrap invariants', () => {
         };
 
         // a paragraph that the wider width keeps as written has the layout for the width itself
-        const wider = fix(fix(source, overrides), { ...overrides, width: width + extra, tolerance: tolerance - extra });
+        const wider = fix(fix(source, overrides), { ...overrides, width: width + extra, tolerance: 0 });
         const context = `${JSON.stringify({ ...overrides, extra })}\n${source}\n${wider}`;
-        const verdicts = layoutIssues(wider, overrides).filter((issue) => !NO_VERDICT.test(issue));
+        const paragraphs = paragraphLines(wider, overrides);
+
+        /**
+         * The wider width lets the last line fill up, where the width itself only lets it take the
+         * tolerance when it then doesn't stick out, and a layout without the tolerance can take
+         * more lines than one with it. Such a paragraph is no layout that the tolerance accepts.
+         */
+        const excluded = new Set(
+          paragraphs
+            .filter((paragraph) => paragraph.sticksOut || paragraph.longerThanRewrap)
+            .flatMap((paragraph) => paragraph.lines),
+        );
+
+        const verdicts = layoutIssues(wider, overrides).filter((issue) => {
+          return !NO_VERDICT.test(issue) && !excluded.has(Number.parseInt(issue, 10));
+        });
 
         expect(verdicts, context).toEqual([]);
 
@@ -2746,10 +2908,18 @@ describe('rewrap invariants', () => {
           expect(rewrapComment(report), context).toBe(report.text);
         }
 
+        stickingOut += paragraphs.some((paragraph) => paragraph.sticksOut) ? 1 : 0;
+        longer += paragraphs.some((paragraph) => paragraph.longerThanRewrap) ? 1 : 0;
         checked += 1;
       }
 
       expect(checked).toBe(400);
+
+      // only a few layouts are left out, so the others still cover every use of the tolerance
+      expect(stickingOut).toBeGreaterThan(0);
+      expect(stickingOut).toBeLessThan(20);
+      expect(longer).toBeGreaterThan(0);
+      expect(longer).toBeLessThan(60);
     },
   );
 });

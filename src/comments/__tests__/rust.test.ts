@@ -365,15 +365,15 @@ describe('runs of Rust line doc comments', () => {
 
     const rewrapped = [
       ...head,
-      '/// thread mid-operation. Conversions run without a process context, and their cancellation story',
-      '/// is the owner-death and unregistration machinery. A volume flush also runs without one, and',
-      '/// its owner releases its claim on every exit path.',
+      '/// thread mid-operation. Conversions run without a process context, and their cancellation',
+      '/// story is the owner-death and unregistration machinery. A volume flush also runs without',
+      '/// one, and its owner releases its claim on every exit path.',
       'pub struct Owner;',
       '',
     ].join('\n');
 
     // the second line has no hint, and it still ends with `paths, and` after the rewrap
-    expect(issues(source, { ...settings, tolerance: 0 })).toEqual(['4:unbalanced']);
+    expect(issues(source, { ...settings, tolerance: 0 })).toEqual(['5:unbalanced']);
     expect(fix(source, { ...settings, tolerance: 0 })).toBe(rewrapped);
     expect(issues(rewrapped, settings)).toEqual([]);
     expect(fix(rewrapped, settings)).toBe(rewrapped);
@@ -444,6 +444,10 @@ function inner(lines: string[]): string {
   return `impl A {\n${lines.map((line) => `  /// ${line}`).join('\n')}\n  fn b() {}\n}\n`;
 }
 
+function innerBlock(lines: string[]): string {
+  return `impl A {\n  /*\n${lines.map((line) => `   * ${line}`).join('\n')}\n   */\n  fn b() {}\n}\n`;
+}
+
 describe('words at the end of a line', () => {
   const settings = { width: 100, maxWidth: 120, tolerance: 5 };
 
@@ -484,7 +488,7 @@ describe('words at the end of a line', () => {
     ]);
   });
 
-  it('uses the tolerance to keep an article with its noun', () => {
+  it('uses the tolerance to even the lines', () => {
     expectLayout(block, [
       'Builds a chain of nested directories one level at a time through a held dirfd, the way an unprivileged',
       'guest can, and then renames its top. The check that a directory is not moved below itself climbs from',
@@ -497,6 +501,30 @@ describe('words at the end of a line', () => {
       'on a Linux filesystem holds one. A path arrives here with its length instead, so the kernel refuses',
       "a NUL with `EINVAL` before any lookup, in either path of a call and in a symlink's target. No call",
       'can then create a name or a target that an index of the tree could not carry.',
+    ]);
+  });
+
+  it('uses the tolerance to end the lines closer together, even with an article at the end of one', () => {
+    expectLayout(innerBlock, [
+      'Hydrates the regular file behind a description the syscall already resolved. The entries resolve',
+      'the fd once and hand the same description to hydration and to the transfer, because hydration can',
+      'park and a concurrent close and reopen may rebind the fd number meanwhile. Linux keeps an in-flight',
+      'operation on the open file it started with, so the transfer must never re-resolve the fd after this',
+      'returns. A `position` marks a positional read, which the description refuses with `ESPIPE` on an',
+      'object that has no position, in the lock this step takes anyway.',
+    ]);
+  });
+
+  it('ends a line with a sentence instead of with the first word of the next one', () => {
+    expectLayout(innerBlock, [
+      'Waits until the open returned, with what it returned, or waits in the kernel, with `None`.',
+      'No other call of the sequence waits meanwhile, so a waiter in the kernel is the open.',
+    ]);
+
+    expectLayout(innerBlock, [
+      'Puts the fd a blocking open returned into its slot, which is empty again after a failure.',
+      'The fd turns nonblocking like the fd of every other slot, because no step may block the',
+      'thread that runs the sequence.',
     ]);
   });
 
@@ -530,6 +558,87 @@ describe('words at the end of a line', () => {
   });
 });
 
+describe('the last line of a paragraph', () => {
+  const settings = { width: 100, maxWidth: 120, tolerance: 5 };
+
+  // the code span is too long for the first line, so two lines have 93 and 105 columns
+  const twoLines = [
+    "Advances a FIFO node's mtime and ctime after a write that transferred bytes, like Linux's",
+    '`file_update_time` in `pipe_write`. A zero-length write leaves the timestamps alone, also like Linux.',
+  ];
+
+  const rewrapped = outer([
+    "Advances a FIFO node's mtime and ctime after a write that transferred bytes, like Linux's",
+    '`file_update_time` in `pipe_write`. A zero-length write leaves the timestamps alone,',
+    'also like Linux.',
+  ]);
+
+  it('saves no line with a last line that ends 12 columns after the line before it', () => {
+    expect(fix(outer([twoLines.join(' ')]), settings)).toBe(rewrapped);
+    expect(issues(rewrapped, settings)).toEqual([]);
+    expect(fix(rewrapped, settings)).toBe(rewrapped);
+  });
+
+  it('reports a last line that takes the tolerance to stick out as wide, and rewraps the paragraph', () => {
+    const saved = outer(twoLines);
+
+    expect(issues(saved, settings)).toEqual(['2:wide']);
+    expect(analyze(saved, settings).some((comment) => hasVerdictIssues(comment))).toBe(true);
+    expect(fix(saved, settings)).toBe(rewrapped);
+
+    // without a tolerance, the same line is wide for ending past the width
+    expect(issues(saved, { ...settings, tolerance: 0 })).toEqual(['2:wide']);
+  });
+
+  it('accepts other lines of the same number, instead of reporting an underfill, and keeps a hint', () => {
+    // lines of 85, 89, and 27 columns, which only the word after a comma at the end of the first sets apart
+    const written = outer([
+      "Advances a FIFO node's mtime and ctime after a write that transferred bytes, like",
+      "Linux's `file_update_time` in `pipe_write`. A zero-length write leaves the timestamps",
+      'alone, also like Linux.',
+    ]);
+
+    expect(issues(written, settings)).toEqual(['1:orphan']);
+    expect(analyze(written, settings).some((comment) => hasVerdictIssues(comment))).toBe(false);
+    expect(issues(written, { ...settings, avoidSentenceOrphans: false })).toEqual([]);
+
+    // a hint is for the agent to decide, so the suggestion is still the rewrap
+    expect(fix(written, settings)).toBe(rewrapped);
+  });
+
+  it('reports a last line that a word from the line before it makes stick out', () => {
+    // `past` moved down, which gives the last line 101 columns, 9 more than the longest line before it
+    const source = outer([
+      "Describes how a read resolves against the file's read cache. A hit carries the requested",
+      'bytes, and a miss carries the fetch end the chunk loop should stream to, which extends',
+      'past the requested end by one chunk bound when the read continues where the previous one stopped.',
+    ]);
+
+    expect(issues(source, settings)).toEqual(['3:wide']);
+
+    // the rewrap takes the tolerance to end the first two lines at the same column
+    expect(fix(source, settings)).toBe(
+      outer([
+        "Describes how a read resolves against the file's read cache. A hit carries the requested bytes, and",
+        'a miss carries the fetch end the chunk loop should stream to, which extends past the requested end',
+        'by one chunk bound when the read continues where the previous one stopped.',
+      ]),
+    );
+  });
+
+  it('measures the last line against the longest line before it, not against the line right before it', () => {
+    // lines of 102, 97, and 103 columns, so the last line ends 6 columns after the second, but 1 after the first
+    const lines = [
+      'Prints JSON the way Prettier formats it, so a formatter that runs over the fixture changes nothing.',
+      'An object takes a line for each key, and a list of numbers fills its lines to the print width.',
+      '`used` counts the columns ahead of the value on its line, and `trailing` counts the comma behind it.',
+    ];
+
+    expect(fix(block([lines.join(' ')]), settings)).toBe(block(lines));
+    expect(issues(block(lines), settings)).toEqual([]);
+  });
+});
+
 describe('rustdoc Markdown', () => {
   const settings = { width: 60, maxWidth: 80 };
 
@@ -560,8 +669,8 @@ describe('rustdoc Markdown', () => {
       '//! See [`permissions`], [`Provider`], and [`count_provider_reads`] for',
       '//! the main items, or [the provider module][`provider`] for the rest.',
       '//! A [link with a destination](crate::permissions::Permission) and',
-      '//! [a link to an anchor](crate::Provider#method.reads) also resolve, and',
-      '//! so do [`Vec<T>`] and [HashMap<K, V>].',
+      '//! [a link to an anchor](crate::Provider#method.reads) also resolve,',
+      '//! and so do [`Vec<T>`] and [HashMap<K, V>].',
       '',
     ].join('\n');
 

@@ -11,7 +11,8 @@ export interface WrapOptions {
 
   /**
    * Sets how many columns a line may exceed its limit before it counts as overflowing. A layout
-   * also uses those columns when that saves a line, or keeps an article with its noun.
+   * also uses those columns to save a line or to make its right edge more even, unless the last
+   * line then sticks out past the lines before it.
    */
   readonly tolerance: number;
 
@@ -446,12 +447,12 @@ function isOrphan(previous: string, token: string): boolean {
 }
 
 /**
- * Returns whether Markdown or JSDoc reads a word as the start of a block when it begins a line, like
- * a list marker (`-`, `1.`), a heading (`#`), a quote (any word that starts with `>`, like `>=`),
- * a fence, a table row, an HTML tag, comment, or declaration (`<div>`, `<!--`, `<?`), or a JSDoc
- * tag like `@param`. A run of `-`, `=`, `*`, or `_` on a line of its own is a heading underline or
- * a rule, so it never starts a line either. Wrapping must never move such a word to the start of a
- * line, or the paragraph would turn into something else.
+ * Returns whether Markdown or JSDoc reads a word as the start of a block when it begins a line, like a
+ * list marker (`-`, `1.`), a heading (`#`), a quote (any word that starts with `>`, like `>=`), a fence,
+ * a table row, an HTML tag, comment, or declaration (`<div>`, `<!--`, `<?`), or a JSDoc tag like `@param`.
+ * A run of `-`, `=`, `*`, or `_` on a line of its own is a heading underline or a rule, so it never starts
+ * a line either. Wrapping must never move such a word to the start of a line, or the paragraph would turn
+ * into something else.
  */
 export function startsBlock(token: string): boolean {
   return (
@@ -589,20 +590,15 @@ export interface LayoutOptions extends WrapOptions {
    * first words of a sentence do, and with `none`, no word does.
    */
   readonly endWords?: 'sentences' | 'none';
-
-  /**
-   * Makes a line that ends with an article, like `the`, cost `ARTICLE_COST`, while one that ends
-   * with the first words of a sentence costs nothing extra.
-   */
-  readonly avoidArticles?: boolean;
 }
 
 /**
  * Sets how heavily lines that come close to the width count against lines that are even. With too
  * much weight, lines of 86 and 89 columns beat two of 86 at a width of 100, which leaves a word
- * like `as` at the end of the longer line, away from the words that it belongs to.
+ * like `as` at the end of the longer line, away from the words that it belongs to, and lines of
+ * 87 and 90 columns beat lines of 87 and 86.
  */
-const FULLNESS_WEIGHT = 0.07;
+const FULLNESS_WEIGHT = 0.045;
 const PARENTHETICAL_SPLIT_WEIGHT = 2;
 
 /**
@@ -620,19 +616,66 @@ const MAX_SENTENCE_START_WORDS = 2;
  */
 const CLAUSE_START_COST = 10;
 const JOINING_WORDS = new Set(['and', 'or', 'nor']);
-
-/**
- * Sets how much a line costs when it ends with an article, which belongs to the noun on the next
- * line. It only counts when the lines may use the tolerance to keep the article with its noun.
- */
-const ARTICLE_COST = 50;
 const ARTICLES = new Set(['a', 'an', 'the']);
 
 /**
- * Sets how much a line that may use the tolerance to keep an article with its noun costs for the
- * square of its columns past the limit, so only the lines that need the columns take them.
+ * Holds what a line costs for the words that it ends with.
  */
-const OVER_WEIGHT = 0.5;
+interface EndWordCosts {
+  /**
+   * Holds the cost of ending with the first `MAX_SENTENCE_START_WORDS` words or fewer
+   * of a sentence.
+   */
+  readonly sentenceStart: number;
+
+  /**
+   * Holds the cost of ending with the first word after a comma (see `CLAUSE_START_COST`).
+   */
+  readonly clauseStart: number;
+
+  /**
+   * Holds the cost of ending with an article, which belongs to the noun on the next line.
+   */
+  readonly article: number;
+
+  /**
+   * Holds the cost of ending inside a sentence instead of after one.
+   */
+  readonly insideSentence: number;
+}
+
+/**
+ * Sets what the words at the end of a line cost in the even lines for one width. An article costs
+ * a little, so that it moves to its noun when that leaves the lines about as even.
+ */
+const BALANCE_COSTS: EndWordCosts = {
+  sentenceStart: SENTENCE_START_COST,
+  clauseStart: CLAUSE_START_COST,
+  article: 4,
+  insideSentence: 0,
+};
+
+/**
+ * Sets what the words at the end of a line cost when the layouts for the widths within the tolerance
+ * compete (see `edgeCost`), in the units of a square column of a ragged right edge, so an even edge
+ * wins over each of them. A line that ends inside a sentence costs about as much as one that ends 4
+ * columns before the others, and an article, like `the`, at the end of a line about as much as one
+ * that ends 3 columns before them. The first words of a sentence already cost their share in the
+ * layout for each width.
+ */
+const EDGE_COSTS: EndWordCosts = {
+  sentenceStart: 1,
+  clauseStart: 5,
+  article: 10,
+  insideSentence: 15,
+};
+
+/**
+ * Sets how much a line costs for the square of its columns past the limit when the layouts for the
+ * widths within the tolerance compete, so of two edges that are about as even, the one closer to
+ * the width wins.
+ */
+const PAST_LIMIT_WEIGHT = 0.05;
 
 /**
  * Sets how many columns a line may stick out past the line before it.
@@ -670,13 +713,6 @@ interface BalanceInput {
    */
   readonly afterOrphan: readonly boolean[];
   readonly splitCosts: ReadonlyMap<number, number>;
-
-  /**
-   * Holds the limit that the lines aim to stay within. A line costs `overWeight` times the square
-   * of its columns past it.
-   */
-  readonly preferredLimit: number;
-  readonly overWeight: number;
 }
 
 /**
@@ -747,10 +783,6 @@ function firstAtMost(values: Int32Array, limit: number, from: number): number {
   return low;
 }
 
-function overCost(input: BalanceInput, length: number): number {
-  return input.overWeight * Math.max(0, length - input.preferredLimit) ** 2;
-}
-
 /**
  * Returns the cheapest layouts that end the given line, or `undefined` when the line can't end
  * anywhere. It only looks at the ends that a whole layout can use. The lines before it reach up
@@ -804,7 +836,7 @@ function costsOfLine(
           continue;
         }
 
-        const candidate = before + (target - length) ** 2 + splitCost + overCost(input, length);
+        const candidate = before + (target - length) ** 2 + splitCost;
 
         if (candidate <= cost) {
           cost = candidate;
@@ -859,8 +891,6 @@ function balanceTokens(
       return options.avoidSentenceOrphans && index >= 2 && isOrphan(tokens[index - 2], tokens[index - 1]);
     }),
     splitCosts: withWordCosts(tokens, splitCosts, options),
-    preferredLimit,
-    overWeight: options.avoidArticles ? OVER_WEIGHT : 0,
   };
 
   const targets: number[] = [];
@@ -909,8 +939,7 @@ function balanceTokens(
     const row = rows[count - 1];
 
     for (let start = row.low; start <= row.high; start += 1) {
-      const lastLength = starts[total] - starts[start] - 1 + (count === 1 ? input.offset : 0);
-      const score = row.costs[start - row.base] + fullness + overCost(input, lastLength);
+      const score = row.costs[start - row.base] + fullness;
 
       const improves = score < (best?.cost ?? Infinity) || (score === best?.cost && target > best.target);
 
@@ -953,6 +982,52 @@ function hasStep(lines: readonly (readonly string[])[], offset = 0): boolean {
   });
 }
 
+/**
+ * Returns how many columns each line may hold when the lines take the tolerance. A line may end
+ * `tolerance` columns past its limit. The last line may only end past its limit when it then ends
+ * at most `tolerance` columns after the longest line before it. A last line that sticks out past
+ * the limit and past every line above it holds what belongs on a line of its own. The first line
+ * starts `restLimit - firstLimit` columns after the others, so it ends that much later too.
+ */
+export function toleranceLimits(
+  lines: readonly (readonly string[])[],
+  firstLimit: number,
+  restLimit: number,
+  tolerance: number,
+): number[] {
+  const last = lines.length - 1;
+
+  const longestBefore = Math.max(
+    0,
+    ...lines.slice(0, last).map((line, index) => lineLength(line) + (index === 0 ? restLimit - firstLimit : 0)),
+  );
+
+  return lines.map((_, index) => {
+    const limit = index === 0 ? firstLimit : restLimit;
+
+    // the only line of a paragraph has no line above it to stick out past
+    if (index < last || last === 0) {
+      return limit + tolerance;
+    }
+
+    return Math.max(limit, Math.min(limit, longestBefore) + tolerance);
+  });
+}
+
+/**
+ * Returns whether the last line ends past what the tolerance allows it (see `toleranceLimits`).
+ */
+function lastLineSticksOut(
+  lines: readonly (readonly string[])[],
+  firstLimit: number,
+  restLimit: number,
+  tolerance: number,
+): boolean {
+  const limit = toleranceLimits(lines, firstLimit, restLimit, tolerance).at(-1) ?? Infinity;
+
+  return lineLength(lines.at(-1) ?? []) > limit;
+}
+
 function splitCostsOf(tokens: readonly string[], limit: number): Map<number, number> {
   const splitCosts = new Map<number, number>();
 
@@ -968,58 +1043,98 @@ function splitCostsOf(tokens: readonly string[], limit: number): Map<number, num
 }
 
 /**
- * Returns whether a line before the last one ends with an article.
+ * Returns what each line break costs for the words that it leaves at the end of the line
+ * before it, keyed by the token that the next line starts with. A break after a whole
+ * sentence of `MAX_SENTENCE_START_WORDS` words or fewer costs nothing for its sentence start.
+ * With `endWords: 'sentences'`, only the words of a sentence count, and with `none`, no word does.
  */
-function hasArticle(lines: readonly (readonly string[])[]): boolean {
-  return lines.slice(0, -1).some((line) => ARTICLES.has((line.at(-1) ?? '').toLowerCase()));
-}
+function endWordCosts(tokens: readonly string[], options: LayoutOptions, costs: EndWordCosts): Map<number, number> {
+  const breaks = new Map<number, number>();
 
-/**
- * Adds the cost of the words that each line break leaves at the end of the line before it:
- * `SENTENCE_START_COST` for the first words of a sentence, `CLAUSE_START_COST` for the first
- * word after a comma, and `ARTICLE_COST` for an article. A break after a whole sentence of
- * that few words costs nothing.
- */
-function withWordCosts(
-  tokens: readonly string[],
-  splitCosts: ReadonlyMap<number, number>,
-  options: LayoutOptions,
-): ReadonlyMap<number, number> {
   if (!options.avoidSentenceOrphans || options.endWords === 'none') {
-    return splitCosts;
+    return breaks;
   }
 
-  const costs = new Map(splitCosts);
-  const add = (end: number, cost: number) => costs.set(end, (costs.get(end) ?? 0) + cost);
+  const add = (end: number, cost: number) => {
+    if (cost > 0) {
+      breaks.set(end, (breaks.get(end) ?? 0) + cost);
+    }
+  };
 
   for (const [index, token] of tokens.entries()) {
     const next = tokens[index + 1] ?? '';
 
-    if (
-      options.endWords === undefined &&
-      /,["')\]*_]*$/.test(token) &&
-      !CLAUSE_END.test(next) &&
-      !JOINING_WORDS.has(next.toLowerCase())
-    ) {
-      add(index + 2, CLAUSE_START_COST);
+    if (options.endWords === undefined) {
+      if (/,["')\]*_]*$/.test(token) && !CLAUSE_END.test(next) && !JOINING_WORDS.has(next.toLowerCase())) {
+        add(index + 2, costs.clauseStart);
+      }
+
+      if (ARTICLES.has(token.toLowerCase())) {
+        add(index + 1, costs.article);
+      }
     }
 
-    if (options.avoidArticles && ARTICLES.has(token.toLowerCase())) {
-      add(index + 1, ARTICLE_COST);
-    }
+    if (!endsSentence(token)) {
+      add(index + 1, costs.insideSentence);
 
-    if (!endsSentence(token) || options.avoidArticles) {
       continue;
     }
 
     const last = Math.min(index + 1 + MAX_SENTENCE_START_WORDS, tokens.length - 1);
 
     for (let end = index + 2; end <= last && !endsSentence(tokens[end - 1]); end += 1) {
-      add(end, SENTENCE_START_COST);
+      add(end, costs.sentenceStart);
     }
   }
 
+  return breaks;
+}
+
+function withWordCosts(
+  tokens: readonly string[],
+  splitCosts: ReadonlyMap<number, number>,
+  options: LayoutOptions,
+): ReadonlyMap<number, number> {
+  const costs = new Map(splitCosts);
+
+  for (const [end, cost] of endWordCosts(tokens, options, BALANCE_COSTS)) {
+    costs.set(end, (costs.get(end) ?? 0) + cost);
+  }
+
   return costs;
+}
+
+/**
+ * Returns how far the lines are from a straight right edge. Each line but the last costs
+ * the square of the columns that it ends before the longest of them, and each line costs
+ * `PAST_LIMIT_WEIGHT` for the square of its columns past its limit. The words at the end
+ * of each line add `EDGE_COSTS`. The first line starts `restLimit - firstLimit` columns
+ * after the others, so it ends that much later too.
+ */
+function edgeCost(
+  lines: readonly (readonly string[])[],
+  firstLimit: number,
+  restLimit: number,
+  options: LayoutOptions,
+): number {
+  const ends = lines.map((line, index) => lineLength(line) + (index === 0 ? restLimit - firstLimit : 0));
+
+  // the only line of a paragraph has no line before it to stick out past
+  const longest = ends.length > 1 ? Math.max(...ends.slice(0, -1)) : Infinity;
+  const breaks = endWordCosts(lines.flat(), options, EDGE_COSTS);
+
+  let cost = 0;
+  let next = 0;
+
+  for (const [index, end] of ends.entries()) {
+    next += lines[index].length;
+    cost += PAST_LIMIT_WEIGHT * Math.max(0, end - restLimit) ** 2;
+
+    // a last line that ends past the lines before it is part of the edge, while a shorter one isn't
+    cost += index < ends.length - 1 ? (longest - end) ** 2 + (breaks.get(next) ?? 0) : Math.max(0, end - longest) ** 2;
+  }
+
+  return cost;
 }
 
 function hasParentheticals(tokens: readonly string[], restLimit: number, options: WrapOptions): boolean {
@@ -1072,9 +1187,12 @@ export function layoutTokens(
 }
 
 /**
- * When the even lines leave an article at the end of a line, the lines may take up to `tolerance`
- * columns past the limit to keep it with its noun. They are then as even as possible again. Only an
- * article may buy those columns, so a line may then end with the first words of a sentence.
+ * Lays the tokens out for the limits and for the limits up to `tolerance` columns wider, and
+ * returns the layout with the fewest lines and then the straightest right edge (see `edgeCost`).
+ * The tolerance is room to save a line or to even the edge, so a wider layout only competes when
+ * it has no step and no last line that sticks out (see `toleranceLimits`), and a paragraph of
+ * two lines keeps them, since its second line would have to join the first. Of two layouts that
+ * are as straight, the one for the narrower limit wins.
  */
 function layoutLines(
   tokens: readonly string[],
@@ -1082,29 +1200,43 @@ function layoutLines(
   restLimit: number,
   options: LayoutOptions,
 ): string[][] {
-  const lines = layoutWithinLimit(tokens, firstLimit, restLimit, options);
+  const within = layoutWithinLimit(tokens, firstLimit, restLimit, options);
 
-  if (
-    !options.avoidSentenceOrphans ||
-    options.endWords !== undefined ||
-    options.tolerance === 0 ||
-    options.keepFirstLine ||
-    !hasArticle(lines) ||
-    hasParentheticals(tokens, restLimit, options)
-  ) {
-    return lines;
+  /**
+   * The first line of a JSDoc tag is never balanced, and the lines after it get the tolerance of
+   * their own. A paragraph with a parenthetical that may go past the width already has room up to
+   * the maximum, which the tolerance doesn't add to.
+   */
+  if (options.tolerance === 0 || options.keepFirstLine || hasParentheticals(tokens, restLimit, options)) {
+    return within;
   }
 
-  const moved = balanceTokens(
-    tokens,
-    firstLimit + options.tolerance,
-    restLimit + options.tolerance,
-    lines.length,
-    { ...options, avoidArticles: true },
-    restLimit,
-  );
+  let best = { lines: within, cost: edgeCost(within, firstLimit, restLimit, options) };
 
-  return moved && !hasArticle(moved) && !hasStep(moved, restLimit - firstLimit) ? moved : lines;
+  for (let extra = 1; extra <= options.tolerance; extra += 1) {
+    // the room of a parenthetical ends at the same column for every width
+    const lines = layoutWithinLimit(tokens, firstLimit + extra, restLimit + extra, {
+      ...options,
+      parentheticalOverflow:
+        options.parentheticalOverflow === undefined ? undefined : options.parentheticalOverflow - extra,
+    });
+
+    if (
+      (lines.length < 2 && within.length >= 2) ||
+      hasStep(lines, restLimit - firstLimit) ||
+      lastLineSticksOut(lines, firstLimit, restLimit, options.tolerance)
+    ) {
+      continue;
+    }
+
+    const cost = edgeCost(lines, firstLimit, restLimit, options);
+
+    if (lines.length < best.lines.length || (lines.length === best.lines.length && cost < best.cost)) {
+      best = { lines, cost };
+    }
+  }
+
+  return best.lines;
 }
 
 function layoutWithinLimit(
@@ -1207,34 +1339,7 @@ function layoutWithinLimit(
     }
   }
 
-  /**
-   * Lines may take up to `tolerance` columns past the limit when that saves a line. A paragraph of
-   * two lines keeps them, since its second line would have to join the first.
-   */
-  if (options.tolerance > 0 && greedy.length > 2) {
-    const fewer = balanceTokens(
-      tokens,
-      firstLimit + options.tolerance,
-      restLimit + options.tolerance,
-      greedy.length - 1,
-      options,
-      restLimit,
-    );
-
-    if (fewer && !hasStep(fewer, restLimit - firstLimit)) {
-      return fewer;
-    }
-  }
-
-  const balanced = balanceTokens(tokens, firstLimit, restLimit, greedy.length, options);
-
-  if (balanced) {
-    return balanced;
-  }
-
-  const stretched = wrapTokens(tokens, firstLimit + options.tolerance, restLimit + options.tolerance, options);
-
-  return hasWidow(stretched) ? greedy : stretched;
+  return balanceTokens(tokens, firstLimit, restLimit, greedy.length, options) ?? greedy;
 }
 
 /**

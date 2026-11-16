@@ -18,6 +18,7 @@ import {
   parentheticalAround,
   startsBlock,
   tokenize,
+  toleranceLimits,
   type LayoutOptions,
   type LineIssue,
   type LineIssueType,
@@ -1091,13 +1092,14 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
   };
 
   /**
-   * Lays the paragraph out for a width that is `extra` columns wider. The columns come out of the
-   * tolerance and out of the room that parentheticals have, so the hard limit stays where it is.
+   * Lays the paragraph out for a width that is `extra` columns wider, with `tolerance` columns
+   * of room past it. The columns come out of the room that parentheticals have, so the hard limit
+   * stays where it is.
    */
-  const layoutAt = (extra: number): { even: string[][]; wrapped: string[][] } | Structure => {
+  const layoutAt = (extra: number, tolerance: number): { even: string[][]; wrapped: string[][] } | Structure => {
     const settings = {
       ...layoutOptions,
-      tolerance: layoutOptions.tolerance - extra,
+      tolerance,
       parentheticalOverflow:
         layoutOptions.parentheticalOverflow === undefined ? undefined : layoutOptions.parentheticalOverflow - extra,
     };
@@ -1108,7 +1110,7 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
     return 'wrapped' in settled ? settled : settle({ ...settings, keepSteps: true }, extra);
   };
 
-  const layout = layoutAt(0);
+  const layout = layoutAt(0, layoutOptions.tolerance);
 
   if (!('wrapped' in layout)) {
     return keep(layout);
@@ -1117,6 +1119,41 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
   const { even, wrapped } = layout;
   const matchesLayout = sameLayout(wrapped, currentLines);
   const isVerdict = (issue: LineIssue): boolean => ISSUE_TIERS[issue.type] === 'verdict';
+  const lengths = currentLines.map((words) => words.join(' ').length);
+  const suggestedLengths = wrapped.map((words) => words.join(' ').length);
+  const lastLine = currentLines.length - 1;
+
+  // the last line may hold fewer columns than the others, so that it never sticks out past them
+  const tolerated = toleranceLimits(currentLines, firstLimit, restLimit, layoutOptions.tolerance);
+
+  const isPastTolerance = (position: number): boolean => {
+    return lengths[position] > (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
+  };
+
+  /**
+   * Whether the last line takes the tolerance to stick out past the lines before it
+   * (see `toleranceLimits`). The last line of the suggestion may be as long for another
+   * reason, like a parenthetical that stays on one line, and a line past the width plus
+   * the tolerance is there for such a reason too.
+   */
+  const lastLineSticksOut = (): boolean => {
+    const limit = Math.max(tolerated[lastLine], suggestedLengths.at(-1) ?? 0);
+
+    return !isPastTolerance(lastLine) && lengths[lastLine] > limit;
+  };
+
+  /**
+   * Whether a line ends past what the tolerance allows it. A line past the width plus the tolerance
+   * is only wide when it is longer than every line of the suggestion, whose lines may be longer to
+   * keep a parenthetical on one line.
+   */
+  const isWide = (position: number): boolean => {
+    if (isPastTolerance(position)) {
+      return lengths[position] > Math.max(...suggestedLengths);
+    }
+
+    return position === lastLine && lastLineSticksOut();
+  };
 
   let fewerEndWords: { even: string[][]; wrapped: string[][] }[] | undefined;
 
@@ -1204,16 +1241,12 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
     };
 
     /**
-     * A paragraph that differs from the suggestion is `wide` on each line that ends more than the
-     * tolerance past the width and past every line of the suggestion, and `unbalanced` otherwise.
+     * A paragraph that differs from the suggestion is `wide` on each line that ends past what the
+     * tolerance allows it (see `isWide`), and `unbalanced` otherwise.
      */
     const differenceAt = (line: number): LineIssue[] => {
-      const longest = Math.max(...wrapped.map((words) => words.join(' ').length));
-
-      const wide = currentLines.flatMap((words, position): LineIssue[] => {
-        const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
-
-        return words.join(' ').length > Math.max(limit, longest) ? [{ type: 'wide', line: position }] : [];
+      const wide = currentLines.flatMap((_, position): LineIssue[] => {
+        return isWide(position) ? [{ type: 'wide', line: position }] : [];
       });
 
       return wide.length > 0 ? wide : [{ type: 'unbalanced', line }];
@@ -1256,32 +1289,47 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
     }
   }
 
+  let plainLayouts: (string[][] | undefined)[] | undefined;
+
   /**
-   * The tolerance is room past the width, so a paragraph that already has the layout for a width
-   * within the tolerance is fine as it is.
+   * Returns the layout without a tolerance for the width and for each width up to the tolerance
+   * wider, which are the layouts that the rewrap picks from, at the index of their extra columns.
+   */
+  const layoutsWithinTolerance = (): (string[][] | undefined)[] => {
+    plainLayouts ??= Array.from({ length: layoutOptions.tolerance + 1 }, (_, extra) => {
+      const plain = layoutAt(extra, 0);
+
+      return 'wrapped' in plain ? plain.wrapped : undefined;
+    });
+
+    return plainLayouts;
+  };
+
+  /**
+   * The tolerance is room past the width that the rewrap may take, not one that it must, so a
+   * paragraph that already has the layout for the width or for a width within the tolerance is
+   * fine as it is. Its last line is the exception. A wider width lets that line fill up, but
+   * measured from the width itself it takes the tolerance, and no last line may take it to stick
+   * out. A paragraph with more lines than the rewrap still needs more lines than it should.
    */
   const matchesWiderLayout = (): boolean => {
-    for (let extra = 1; extra <= layoutOptions.tolerance; extra += 1) {
-      const wider = layoutAt(extra);
-
-      if ('wrapped' in wider && sameLayout(wider.wrapped, currentLines)) {
-        return true;
-      }
-    }
-
-    return false;
+    return (
+      currentLines.length <= wrapped.length &&
+      !lastLineSticksOut() &&
+      layoutsWithinTolerance().some((plain) => plain !== undefined && sameLayout(plain, currentLines))
+    );
   };
 
   /**
    * The tolerance holds for each line on its own too. A paragraph with as many lines as the
    * suggestion is fine as it is when each line but the last is at most the tolerance shorter
-   * than the shortest of those lines in the suggestion, and no line ends more than the tolerance
-   * past the width, unless the same line of the suggestion ends past it too. The shortest line
-   * is the measure, since one word that moves shifts every line after it. No line may end inside
-   * text that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
+   * than the shortest of those lines in the suggestion, and no line ends past what the tolerance
+   * allows it, unless the same line of the suggestion ends past it too. The shortest line is the
+   * measure, since one word that moves shifts every line after it. No line may end inside text
+   * that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
    *
    * Which words a line ends with is a heuristic, so lines close to a rewrap where fewer of those
-   * words cost extra are fine too.
+   * words cost extra are fine too, and so are lines close to the layout without a tolerance.
    */
   const staysNearLayout = (): boolean => {
     if (layoutOptions.tolerance === 0 || splitTokenLine(currentLines, units) !== -1) {
@@ -1295,19 +1343,19 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
 
       const shortest = Math.min(...layout.slice(0, -1).map((words) => words.join(' ').length));
 
-      return currentLines.every((words, position) => {
-        const length = words.join(' ').length;
-        const limit = (position === 0 ? firstLimit : restLimit) + layoutOptions.tolerance;
-        const isLast = position === currentLines.length - 1;
-
+      return lengths.every((length, position) => {
         return (
-          (isLast || length >= shortest - layoutOptions.tolerance) &&
-          length <= Math.max(layout[position].join(' ').length, limit)
+          (position === lastLine || length >= shortest - layoutOptions.tolerance) &&
+          length <= Math.max(layout[position].join(' ').length, tolerated[position])
         );
       });
     };
 
-    return isNear(wrapped) || layoutsWithFewerEndWords().some((free) => isNear(free.wrapped));
+    return (
+      isNear(wrapped) ||
+      layoutsWithFewerEndWords().some((free) => isNear(free.wrapped)) ||
+      isNear(layoutsWithinTolerance()[0] ?? wrapped)
+    );
   };
 
   const hasVerdict = lineIssues.some((issue) => isVerdict(issue));

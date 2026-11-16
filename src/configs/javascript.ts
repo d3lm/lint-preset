@@ -180,8 +180,8 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     '@stylistic/no-trailing-spaces': 'error',
 
     /**
-     * Indentation is owned by Prettier. Oxlint's @stylistic/indent port diverges from eslint-stylistic on edge cases
-     * (e.g., multiline object args inside ternaries), so we leave the rule off.
+     * Indentation is owned by Prettier. Oxlint's @stylistic/indent port diverges from eslint-stylistic
+     * on edge cases (e.g., multiline object args inside ternaries), so we leave the rule off.
      */
     '@stylistic/indent': 'off',
     '@stylistic/no-multiple-empty-lines': ['error', { max: 1 }],

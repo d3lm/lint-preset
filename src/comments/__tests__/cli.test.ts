@@ -192,6 +192,21 @@ describe('agent', () => {
     expect(code).toBe(0);
     expect(stderr).toContain('for 1 comment(s) in 1 file(s)');
   });
+
+  it('appends --prompt to the instructions of the config file', async () => {
+    const promptFile = path.join(directory, 'prompt.txt');
+    const save = `require('fs').writeFileSync(${JSON.stringify(promptFile)}, require('fs').readFileSync(0))`;
+
+    writeFileSync(
+      path.join(directory, '.commentsrc.json'),
+      JSON.stringify({ agent: { instructions: 'Keep it short.', command: [process.execPath, '-e', save] } }),
+    );
+
+    const { code } = await run('agent', verdict, '--no-interactive', '--failing', '-p', 'Reword the comments.');
+
+    expect(code).toBe(0);
+    expect(readFileSync(promptFile, 'utf8')).toContain('## Instructions\n\nKeep it short.\n\nReword the comments.\n');
+  });
 });
 
 describe('--include and --ignore', () => {

@@ -113,14 +113,17 @@ export interface CommentsConfig {
   readonly singleLineWidth?: number;
 
   /**
-   * Sets how many columns prose lines may go past `width` when that saves a line in a paragraph
-   * of three or more lines, or keeps an article like `the` at the end of a line together with
-   * its noun on the next line. A paragraph that already has the layout for a wider `width`, up
-   * to `width` plus this many columns, also passes as it is. So does a paragraph with as many
-   * lines as the rewrap whose lines, the last aside, are at most this many columns shorter
-   * than the shortest of them in the rewrap, and end at most this many columns past `width`.
-   * It never goes past `maxWidth`. When `maxWidth` is omitted, it also sets a legacy hard limit
-   * of `width + tolerance` columns.
+   * Sets how many columns prose lines may go past `width`. The rewrap lays a paragraph out for
+   * `width` and for each width up to this many columns wider, and keeps the layout with the fewest
+   * lines and then the most even right edge, so the tolerance saves a line in a paragraph of three
+   * or more lines, or evens the lines out. A paragraph that already has one of those layouts also
+   * passes as it is, unless it has more lines than the rewrap. So does a paragraph with as many
+   * lines as the rewrap, or as the layout for `width` itself, whose lines, the last aside, are at
+   * most this many columns shorter than the shortest of them in that layout, and end at most this
+   * many columns past `width`. The last line of a paragraph only goes past `width` when it then
+   * ends at most this many columns after the longest line before it, both in a rewrap and in a
+   * paragraph that passes as it is. The tolerance never reaches past `maxWidth`. When `maxWidth`
+   * is omitted, it also sets a legacy hard limit of `width + tolerance` columns.
    */
   readonly tolerance?: number;
 

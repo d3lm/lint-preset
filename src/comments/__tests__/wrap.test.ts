@@ -1,13 +1,18 @@
 import {
+  bindLineStarts,
   breakAfterSentence,
   findLineIssues,
   hasWidow,
   isAbbreviation,
+  layoutTokens,
   startsBlock,
   tokenize,
+  toleranceLimits,
   wrapTokens,
+  type LayoutOptions,
   type WrapOptions,
 } from '../wrap.js';
+import { randomComments } from './helpers/random-comments.js';
 
 const options: WrapOptions = { tolerance: 0, avoidSentenceOrphans: true };
 
@@ -410,6 +415,171 @@ describe('findLineIssues', () => {
         }
       }
     }
+  });
+});
+
+describe('toleranceLimits', () => {
+  it('lets every line but the last end the tolerance past its limit', () => {
+    expect(toleranceLimits(lines('aaaa bbbb', 'cccc dddd', 'eeee'), 20, 20, 3)).toEqual([23, 23, 20]);
+    expect(toleranceLimits(lines('aaaa bbbb'), 20, 20, 3)).toEqual([23]);
+    expect(toleranceLimits([], 20, 20, 3)).toEqual([]);
+  });
+
+  it('lets the last line end the tolerance after the longest line before it, but never before its limit', () => {
+    // a line before it that reaches the limit leaves the last line all of the tolerance
+    expect(toleranceLimits(lines('a'.repeat(20), 'b'), 20, 20, 3)).toEqual([23, 23]);
+    expect(toleranceLimits(lines('a'.repeat(23), 'b'), 20, 20, 3)).toEqual([23, 23]);
+
+    expect(toleranceLimits(lines('a'.repeat(19), 'b'), 20, 20, 3)).toEqual([23, 22]);
+    expect(toleranceLimits(lines('a'.repeat(18), 'b'), 20, 20, 3)).toEqual([23, 21]);
+    expect(toleranceLimits(lines('a'.repeat(17), 'b'), 20, 20, 3)).toEqual([23, 20]);
+    expect(toleranceLimits(lines('a'.repeat(5), 'b'), 20, 20, 3)).toEqual([23, 20]);
+  });
+
+  it('measures the last line against the longest line before it, not against the line right before it', () => {
+    expect(toleranceLimits(lines('a'.repeat(19), 'b'.repeat(12), 'c'), 20, 20, 3)).toEqual([23, 23, 22]);
+    expect(toleranceLimits(lines('a'.repeat(12), 'b'.repeat(19), 'c'), 20, 20, 3)).toEqual([23, 23, 22]);
+  });
+
+  it('counts the columns that the first line starts after the others', () => {
+    // the first line holds 15 columns and starts 4 columns later, so it ends at column 19 of the others
+    expect(toleranceLimits(lines('a'.repeat(15), 'b'), 16, 20, 3)).toEqual([19, 22]);
+  });
+
+  it('gives every line its limit without a tolerance', () => {
+    expect(toleranceLimits(lines('aaaa', 'bbbb', 'cccc'), 16, 20, 0)).toEqual([16, 20, 20]);
+  });
+});
+
+describe('layoutTokens', () => {
+  const settings: LayoutOptions = { tolerance: 3, avoidSentenceOrphans: true };
+
+  function layout(text: string, limit: number, overrides: Partial<LayoutOptions> = {}): string[] {
+    return layoutTokens(tokenize(text), limit, limit, { ...settings, ...overrides }).map((line) => line.join(' '));
+  }
+
+  describe('the tolerance as room to even the right edge', () => {
+    const edge: LayoutOptions = { tolerance: 5, avoidSentenceOrphans: true };
+
+    function lengths(text: string, limit: number, overrides: Partial<LayoutOptions> = {}): number[] {
+      return layoutTokens(bindLineStarts(tokenize(text)), limit, limit, { ...edge, ...overrides }).map((line) => {
+        return line.join(' ').length;
+      });
+    }
+
+    it('takes the layout for a wider limit whose lines end closer together', () => {
+      const text =
+        'Hydrates the regular file behind a description the syscall already resolved. The entries resolve the fd once and hand the same description to hydration and to the transfer, because hydration can park and a concurrent close and reopen may rebind the fd number meanwhile. Linux keeps an in-flight operation on the open file it started with, so the transfer must never re-resolve the fd after this returns. A `position` marks a positional read, which the description refuses with `ESPIPE` on an object that has no position, in the lock this step takes anyway.';
+
+      // the layout for a limit of 99, which saves a line, and whose lines but the last end within 3 columns
+      expect(lengths(text, 95)).toEqual([96, 97, 99, 99, 96, 64]);
+      expect(lengths(text, 99, { tolerance: 0 })).toEqual([96, 97, 99, 99, 96, 64]);
+      expect(lengths(text, 95, { tolerance: 0 })).toEqual([88, 91, 88, 89, 87, 89, 18]);
+    });
+
+    it('keeps the layout for the limit when no wider one ends its lines closer together', () => {
+      const text =
+        "Holds the longest reference video the model accepts in seconds, for models that cap the reference video's length or bill it on top of the output. The client measures the connected video and sends its length with the request so the server can check it and the charge can include it when the model's price table bills it.";
+
+      // the second line ends with `the`, which the even lines are worth
+      expect(lengths(text, 95)).toEqual([83, 85, 84, 64]);
+      expect(lengths(text, 95, { tolerance: 0 })).toEqual([83, 85, 84, 64]);
+    });
+
+    it('prefers lines that end with a sentence to an edge that is only a little more even', () => {
+      const text =
+        'Selects how `utimensat` updates one timestamp, mirroring the timespec forms of Linux. `Set` carries wall-clock milliseconds like the existing atime and mtime arguments, `Now` matches `UTIME_NOW`, and `Omit` matches `UTIME_OMIT`.';
+
+      expect(lengths(text, 96)).toEqual([85, 82, 59]);
+
+      // the layout for a limit of 103 ends its lines at the same column, but the first one inside a sentence
+      expect(lengths(text, 103, { tolerance: 0 })).toEqual([99, 99, 28]);
+      expect(lengths(text, 96, { endWords: 'none' })).toEqual([99, 99, 28]);
+    });
+
+    it('never takes the tolerance in a paragraph with a parenthetical, which has room up to the maximum', () => {
+      const text =
+        "Update a path's timestamps relative to a dirfd like utimensat(2). Each timestamp is either wall-clock milliseconds, 'now', or 'omit', and a null times argument behaves like a NULL times pointer (both timestamps become now). AtFlags.AT_SYMLINK_NOFOLLOW updates the symlink itself like lutimes.";
+
+      const parenthetical = { parentheticalOverflow: 25 };
+
+      expect(lengths(text, 95, parenthetical)).toEqual(lengths(text, 95, { ...parenthetical, tolerance: 0 }));
+      expect(Math.max(...lengths(text, 95, parenthetical))).toBeLessThanOrEqual(95);
+    });
+  });
+
+  describe('the tolerance on the last line', () => {
+    // the first line can't take the long word after it, so only the last line can take the words that save a line
+    const head = 'aaaaaaaaa bbbbbbbbb';
+
+    it('saves a line when the last line then ends at most the tolerance after the line before it', () => {
+      // lines of 19 and 22 columns
+      expect(layout(`${head} cccccccccc ddd eee fff`, 20)).toEqual([head, 'cccccccccc ddd eee fff']);
+
+      // lines of 20 and 23 columns
+      expect(layout(`a${head} cccccccccc ddd eee ffff`, 20)).toEqual([`a${head}`, 'cccccccccc ddd eee ffff']);
+    });
+
+    it('keeps the line when the last line would stick out', () => {
+      // one column more on the last line, which would end 4 columns after the first
+      expect(layout(`${head} cccccccccc ddd eee ffff`, 20)).toEqual([head, 'cccccccccc', 'ddd eee ffff']);
+
+      // one column less on the first line, which the last line of 22 columns would end 4 columns after
+      expect(layout(`${head.slice(1)} cccccccccc ddd eee fff`, 20)).toEqual([
+        head.slice(1),
+        'cccccccccc',
+        'ddd eee fff',
+      ]);
+    });
+
+    it('lays the paragraph out like without a tolerance when the last line would stick out', () => {
+      for (const text of [`${head} cccccccccc ddd eee ffff`, `${head.slice(1)} cccccccccc ddd eee fff`]) {
+        expect(layout(text, 20)).toEqual(layout(text, 20, { tolerance: 0 }));
+      }
+    });
+
+    it('lets a last line within its limit end any number of columns after the line before it', () => {
+      // lines of 9 and 20 columns, which take no tolerance
+      expect(layout('aaaaaaaaa bbbbbbbbbbbb ccc ddd', 20)).toEqual(['aaaaaaaaa', 'bbbbbbbbbbbb ccc ddd']);
+    });
+
+    it('never leaves a last line that sticks out, whatever the words and limits are', () => {
+      const { random, between, commentBody } = randomComments(86_028_121);
+
+      let stickingOut = 0;
+      let saved = 0;
+
+      for (let run = 0; run < 2000; run += 1) {
+        const tokens = tokenize(commentBody().lines.join(' '));
+        const restLimit = between(12, 96);
+        const firstLimit = restLimit - (random() < 0.3 ? between(1, 6) : 0);
+
+        const overrides: LayoutOptions = {
+          tolerance: between(1, 8),
+          avoidSentenceOrphans: random() < 0.7,
+          keepFirstLine: random() < 0.2,
+        };
+
+        const laidOut = layoutTokens(tokens, firstLimit, restLimit, overrides);
+        const within = layoutTokens(tokens, firstLimit, restLimit, { ...overrides, tolerance: 0 });
+        const limits = toleranceLimits(laidOut, firstLimit, restLimit, overrides.tolerance);
+        const last = laidOut.at(-1)?.join(' ').length ?? 0;
+        const context = `${JSON.stringify({ firstLimit, restLimit, ...overrides })}\n${tokens.join(' ')}`;
+
+        // a word that is too long for its line sticks out without a tolerance too
+        if (last > (limits.at(-1) ?? Infinity)) {
+          expect(laidOut, context).toEqual(within);
+
+          stickingOut += 1;
+        }
+
+        saved += laidOut.length < within.length ? 1 : 0;
+      }
+
+      // the tolerance still saves lines, and words that are too long still end paragraphs
+      expect(saved).toBeGreaterThan(100);
+      expect(stickingOut).toBeGreaterThan(0);
+    });
   });
 });
 
