@@ -203,6 +203,9 @@ function findClosingBracket(text: string, start: number): number {
 
         break;
       }
+      default: {
+        break;
+      }
     }
   }
 

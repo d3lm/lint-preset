@@ -157,6 +157,27 @@ const rule: Rule.RuleModule = {
       return importBefore !== undefined && importAfter !== undefined && importBefore !== importAfter;
     }
 
+    /**
+     * The cases of a switch form a single block (see `padding-line-between-statements`), so a
+     * comment before a case that follows another case can't be preceded by a blank line.
+     */
+    function isBetweenCases(comment: Comment): boolean {
+      const tokenAfter = sourceCode.getTokenAfter(comment as unknown as Rule.Node);
+
+      if (!tokenAfter) {
+        return false;
+      }
+
+      const node = sourceCode.getNodeByRangeIndex(tokenAfter.range[0]) as Rule.Node | null;
+
+      return (
+        node?.type === 'SwitchCase' &&
+        node.range?.[0] === tokenAfter.range[0] &&
+        node.parent.type === 'SwitchStatement' &&
+        node.parent.cases[0] !== node
+      );
+    }
+
     function isAtBlockStart(comment: Comment): boolean {
       const tokenBefore = sourceCode.getTokenBefore(comment as unknown as Rule.Node, {
         includeComments: false,
@@ -175,7 +196,8 @@ const rule: Rule.RuleModule = {
         isBeforeFirstTypeConstituent(comment) ||
         isChainedCallContext(comment) ||
         isCommentAllowedByEnclosure(comment) ||
-        isBetweenImports(comment)
+        isBetweenImports(comment) ||
+        isBetweenCases(comment)
       );
     }
 

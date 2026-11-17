@@ -66,7 +66,7 @@ export const paddingLineEntries = [
     next: ['singleline-let'],
   },
   {
-    blankLine: 'any',
+    blankLine: 'never',
     prev: ['case', 'block', 'block-like'],
     next: ['case', 'default'],
   },
@@ -168,6 +168,11 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
     'no-unused-vars': 'off',
     'no-async-promise-executor': 'error',
     'no-case-declarations': 'error',
+    /**
+     * The comment pattern matches no text, so a `// no default` comment can't replace
+     * the `default` case.
+     */
+    'default-case': ['error', { commentPattern: '[^\\s\\S]' }],
     'default-case-last': 'error',
     'no-cond-assign': 'error',
     'no-return-assign': ['error', 'always'],
@@ -194,26 +199,6 @@ export function jsRulesOxlint(options: JavaScriptRuleOptions = {}): Linter.Rules
       },
     ],
     '@stylistic/brace-style': ['error', '1tbs'],
-    '@stylistic/lines-around-comment': [
-      'error',
-      {
-        beforeBlockComment: true,
-        beforeLineComment: true,
-        allowBlockStart: true,
-        allowBlockEnd: false,
-        allowObjectStart: true,
-        allowObjectEnd: false,
-        allowArrayStart: true,
-        allowArrayEnd: true,
-        allowClassStart: true,
-        allowInterfaceStart: true,
-        allowInterfaceEnd: true,
-        allowEnumStart: true,
-        allowEnumEnd: true,
-        allowTypeStart: true,
-        allowTypeEnd: false,
-      },
-    ],
 
     ...unicornRulesOxlint,
     ...unicornRulesJsPlugin,

@@ -26,6 +26,12 @@
     "no-case-declarations": [
       "error"
     ],
+    "default-case": [
+      "error",
+      {
+        "commentPattern": "[^\\s\\S]"
+      }
+    ],
     "default-case-last": [
       "error"
     ],
@@ -153,7 +159,7 @@
         ]
       },
       {
-        "blankLine": "any",
+        "blankLine": "never",
         "prev": [
           "case",
           "block",
@@ -1109,6 +1115,12 @@
     "no-case-declarations": [
       "error"
     ],
+    "default-case": [
+      "error",
+      {
+        "commentPattern": "[^\\s\\S]"
+      }
+    ],
     "default-case-last": [
       "error"
     ],
@@ -1236,7 +1248,7 @@
         ]
       },
       {
-        "blankLine": "any",
+        "blankLine": "never",
         "prev": [
           "case",
           "block",
@@ -1334,26 +1346,6 @@
     "@stylistic/brace-style": [
       "error",
       "1tbs"
-    ],
-    "@stylistic/lines-around-comment": [
-      "error",
-      {
-        "beforeBlockComment": true,
-        "beforeLineComment": true,
-        "allowBlockStart": true,
-        "allowBlockEnd": false,
-        "allowObjectStart": true,
-        "allowObjectEnd": false,
-        "allowArrayStart": true,
-        "allowArrayEnd": true,
-        "allowClassStart": true,
-        "allowInterfaceStart": true,
-        "allowInterfaceEnd": true,
-        "allowEnumStart": true,
-        "allowEnumEnd": true,
-        "allowTypeStart": true,
-        "allowTypeEnd": false
-      }
     ],
     "unicorn/no-await-in-promise-methods": [
       "error"

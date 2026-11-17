@@ -99,8 +99,109 @@ tester.run(
         `,
         options: paddingLineEntries,
       },
+      {
+        code: stripIndent`
+          switch (kind) {
+            case 'first': {
+              track(kind);
+
+              break;
+            }
+            // the second kind
+            case 'second': {
+              break;
+            }
+            default: {
+              break;
+            }
+          }
+        `,
+        options: paddingLineEntries,
+      },
     ],
     invalid: [
+      {
+        code: stripIndent`
+          switch (kind) {
+            case 'first': {
+              track(kind);
+
+              break;
+            }
+
+            case 'second': {
+              break;
+            }
+
+            default: {
+              break;
+            }
+          }
+        `,
+        output: stripIndent`
+          switch (kind) {
+            case 'first': {
+              track(kind);
+
+              break;
+            }
+            case 'second': {
+              break;
+            }
+            default: {
+              break;
+            }
+          }
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'unexpectedBlankLine' }, { messageId: 'unexpectedBlankLine' }],
+      },
+      {
+        code: stripIndent`
+          switch (kind) {
+            case 'first':
+
+            case 'second':
+              break;
+          }
+        `,
+        output: stripIndent`
+          switch (kind) {
+            case 'first':
+            case 'second':
+              break;
+          }
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'unexpectedBlankLine' }],
+      },
+      {
+        code: stripIndent`
+          switch (kind) {
+            case 'first': {
+              break;
+            }
+
+            // the second kind
+            case 'second': {
+              break;
+            }
+          }
+        `,
+        output: stripIndent`
+          switch (kind) {
+            case 'first': {
+              break;
+            }
+            // the second kind
+            case 'second': {
+              break;
+            }
+          }
+        `,
+        options: paddingLineEntries,
+        errors: [{ messageId: 'unexpectedBlankLine' }],
+      },
       {
         code: stripIndent`
           expect(row.stateRevision).toBeGreaterThanOrEqual(lastStateRevision);
@@ -246,6 +347,24 @@ describe('javascript no-return-assign config', () => {
 
   it('forbids assignments as arrow function bodies', () => {
     expect(lint('const assign = (value) => (target.value = value);')).toEqual(['arrowAssignment']);
+  });
+});
+
+describe('javascript default-case config', () => {
+  const linter = new Linter();
+  const rules = { 'default-case': jsRulesOxlint()['default-case'] };
+  const lint = (code: string) => linter.verify(code, { rules }).map((message) => message.messageId);
+
+  it('allows switches with a default case', () => {
+    expect(lint("switch (kind) { case 'first': break; default: break; }")).toEqual([]);
+  });
+
+  it('forbids switches without a default case', () => {
+    expect(lint("switch (kind) { case 'first': break; }")).toEqual(['missingDefaultCase']);
+  });
+
+  it('forbids replacing the default case with a comment', () => {
+    expect(lint("switch (kind) { case 'first': break; // no default\n}")).toEqual(['missingDefaultCase']);
   });
 });
 

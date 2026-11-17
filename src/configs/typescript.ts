@@ -168,9 +168,6 @@ export function tsRulesOxlint(options: TypeScriptRuleOptions = {}): Linter.Rules
     ],
 
     '@stylistic/type-annotation-spacing': 'error',
-
-    // comment handling conflicts with the padding-line heuristics
-    '@stylistic/lines-around-comment': 'off',
   };
 }
 

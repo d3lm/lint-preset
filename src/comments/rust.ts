@@ -45,17 +45,14 @@ function platformSuffixes(): string[] {
     case 'darwin': {
       return [`darwin-${arch}`, 'darwin-universal'];
     }
-
     case 'linux': {
       return arch === 'arm'
         ? ['linux-arm-gnueabihf', 'linux-arm-musleabihf']
         : [`linux-${arch}-gnu`, `linux-${arch}-musl`];
     }
-
     case 'win32': {
       return [`win32-${arch}-msvc`, `win32-${arch}-gnu`];
     }
-
     default: {
       return [`${platform}-${arch}`];
     }

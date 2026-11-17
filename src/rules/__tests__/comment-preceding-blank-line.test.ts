@@ -93,6 +93,21 @@ tester.run('comment-preceding-blank-line', rule, {
         import bar from 'bar';
       `,
     },
+    {
+      code: stripIndent`
+        switch (kind) {
+          case 'first': {
+            break;
+          }
+          // between cases
+          case 'second':
+            break;
+          // before the default case
+          default:
+            break;
+        }
+      `,
+    },
     stripIndent`
       /**
        * Some comment.
@@ -137,6 +152,28 @@ tester.run('comment-preceding-blank-line', rule, {
 
         // not between two imports
         const a = foo;
+      `,
+      errors: [{ messageId: 'missingBlankLine' }],
+    },
+    {
+      code: stripIndent`
+        switch (kind) {
+          case 'first': {
+            track(kind);
+            // inside a case body
+            break;
+          }
+        }
+      `,
+      output: stripIndent`
+        switch (kind) {
+          case 'first': {
+            track(kind);
+
+            // inside a case body
+            break;
+          }
+        }
       `,
       errors: [{ messageId: 'missingBlankLine' }],
     },
