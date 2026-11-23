@@ -834,7 +834,7 @@ describe('analyzeSource', () => {
     `);
   });
 
-  describe('lines that stick out far past the line before them', () => {
+  describe('lines that stick out far past a line above them', () => {
     const settings = { width: 100, maxWidth: 120 };
 
     const even = stripIndent`
@@ -893,6 +893,43 @@ describe('analyzeSource', () => {
     it('accepts the even lines as they are', () => {
       expect(analyzeSource(even, 'file.ts', { ...options, ...settings }).some((c) => isSuspicious(c))).toBe(false);
       expect(fix(even, settings)).toBe(even);
+    });
+
+    describe('lines that climb in small steps', () => {
+      // lines of 70, 79, and 88 columns, so the last one sticks out 18 columns past the first
+      const climbing = stripIndent`
+        /**
+         * Caps a host-supplied timeout at about thirty years in milliseconds.
+         * \`Duration::from_secs_f64\` panics on values that overflow a \`Duration\`, and a
+         * trusted-but-buggy host passing \`Infinity\` or a huge number must not abort the kernel.
+         */
+      `;
+
+      const straight = stripIndent`
+        /**
+         * Caps a host-supplied timeout at about thirty years in milliseconds.
+         * \`Duration::from_secs_f64\` panics on values that overflow a \`Duration\`,
+         * and a trusted-but-buggy host passing \`Infinity\` or a huge number must
+         * not abort the kernel.
+         */
+      `;
+
+      it('takes another line for a straight edge, although no line sticks out far past the one right above it', () => {
+        const [comment] = analyzeSource(climbing, 'file.ts', { ...options, ...settings });
+
+        expect(comment.paragraphs[0].issues.map((issue) => `${issue.line}:${issue.type}:${issue.tier}`)).toEqual([
+          '3:unbalanced:verdict',
+        ]);
+
+        expect(rewrapComment(comment)).toBe(straight);
+      });
+
+      it('accepts the straight lines as they are, without an underfill for the line more', () => {
+        const [comment] = analyzeSource(straight, 'file.ts', { ...options, ...settings });
+
+        expect(comment.paragraphs[0].issues).toEqual([]);
+        expect(fix(straight, settings)).toBe(straight);
+      });
     });
 
     it('keeps the fewest lines when the extra lines would read as code', () => {

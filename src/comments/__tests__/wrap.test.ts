@@ -581,6 +581,61 @@ describe('layoutTokens', () => {
       expect(stickingOut).toBeGreaterThan(0);
     });
   });
+
+  describe('lines that stick out far past a line above them', () => {
+    const plain: LayoutOptions = { tolerance: 0, avoidSentenceOrphans: true };
+
+    function lengths(text: string, limit: number, overrides: Partial<LayoutOptions> = {}): number[] {
+      return layoutTokens(tokenize(text), limit, limit, { ...plain, ...overrides }).map((line) => {
+        return line.join(' ').length;
+      });
+    }
+
+    it('takes another line when the fewest lines climb in small steps', () => {
+      const text =
+        'Caps a host-supplied timeout at about thirty years in milliseconds. `Duration::from_secs_f64` panics on values that overflow a `Duration`, and a trusted-but-buggy host passing `Infinity` or a huge number must not abort the kernel.';
+
+      // the orphan rule keeps the first line short, and the even lines climb 18 columns in two steps of 9
+      expect(lengths(text, 96, { keepSteps: true })).toEqual([67, 76, 85]);
+
+      expect(layoutTokens(tokenize(text), 96, 96, plain).map((line) => line.join(' '))).toEqual([
+        'Caps a host-supplied timeout at about thirty years in milliseconds.',
+        '`Duration::from_secs_f64` panics on values that overflow a `Duration`,',
+        'and a trusted-but-buggy host passing `Infinity` or a huge number must',
+        'not abort the kernel.',
+      ]);
+    });
+
+    it('keeps the fewest lines when another line brings the lines too little closer together', () => {
+      const text =
+        'Reads the names the loader keeps in [the table of every section in a file][sections] whenever something asks for the name of one section.';
+
+      // lines of 35, 48, 36, and 15 columns would end 13 columns apart instead of 17, which is no straight edge
+      expect(lengths(text, 56)).toEqual([35, 48, 52]);
+    });
+
+    it('keeps the fewest lines when two more lines are worth less than two lines', () => {
+      const text =
+        "Implements the socket-only `recv(2)`/`send(2)` syscall family and its msghdr-shaped `recvmsg(2)`/`sendmsg(2)` siblings. These resolve the fd straight to its socket endpoint (failing `ENOTSOCK` on anything else) and carry the message flags the generic `read`/`write` path has no room for. With zero flags `recv` and `send` behave like `read` and `write` on the same socket apart from two Linux-mandated differences. Errors report the calling syscall's name, and a zero-length `recv` on a datagram socket pops and discards the front datagram the way `recvfrom` does, while a zero-length `read` consumes nothing. The msghdr pair adds scatter/gather segments, an optional destination address, `msg_flags` reporting, and the `SCM_RIGHTS` control plane on top of the same bodies. All four work on stream and datagram sockets through the shared endpoint dispatch.";
+
+      /**
+       * The lines end 16 columns apart. One more line leaves them 10 columns apart, and two more
+       * lines 7 columns, which is 9 columns closer together, not the 16 that they cost.
+       */
+      expect(lengths(text, 96, { parentheticalOverflow: 20 })).toEqual([83, 88, 97, 93, 95, 97, 99, 97, 99]);
+    });
+
+    it('takes the fewest more lines without a step when no more lines are worth it', () => {
+      const text =
+        'Returns more than the short form, like the [values of an argument][crate::Matches::get_many], their [order among the other arguments][crate::Matches::indices_of], and [what set each of them][crate::Matches::value_source]. The short form only returns the values and none of the rest.';
+
+      // the third line sticks out 21 columns past the second
+      expect(lengths(text, 94, { keepSteps: true })).toEqual([93, 72, 93, 21]);
+
+      // the links leave no straight edge, so the lines still climb 20 columns, but in steps of 14 at most
+      expect(lengths(text, 94)).toEqual([42, 56, 62, 58, 60]);
+    });
+  });
 });
 
 describe('hasWidow', () => {

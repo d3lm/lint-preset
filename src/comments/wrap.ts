@@ -583,7 +583,7 @@ export interface LayoutOptions extends WrapOptions {
   readonly keepFirstLine?: boolean;
 
   /**
-   * Keeps the fewest lines even when a line sticks out far past the line before it.
+   * Keeps the fewest lines even when a line sticks out far past a line above it.
    */
   readonly keepSteps?: boolean;
 
@@ -681,7 +681,7 @@ const EDGE_COSTS: EndWordCosts = {
 const PAST_LIMIT_WEIGHT = 0.05;
 
 /**
- * Sets how many columns a line may stick out past the line before it.
+ * Sets how many columns a line may stick out past a line above it.
  */
 const MAX_STEP = 15;
 
@@ -689,6 +689,12 @@ const MAX_STEP = 15;
  * Sets how many lines more than its fewest a layout may take to keep a line from sticking out.
  */
 const EXTRA_LINES = 2;
+
+/**
+ * Sets how many columns closer together the lines must end for each line more than the fewest,
+ * which is about one word. A line more is only worth it for a clearly straighter right edge.
+ */
+const MIN_LINE_GAIN = 8;
 
 /**
  * Holds what the cost of a line depends on, besides the length that the lines aim for.
@@ -970,19 +976,50 @@ function balanceTokens(
 }
 
 /**
- * Returns whether a line sticks out more than `MAX_STEP` columns past the line before it.
- * The first line starts `offset` columns after the others, so it ends that much later too.
+ * Returns the column that each line ends at. The first line starts `offset` columns after
+ * the others, so it ends that much later too.
+ */
+function lineEnds(lines: readonly (readonly string[])[], offset: number): number[] {
+  return lines.map((line, index) => lineLength(line) + (index === 0 ? offset : 0));
+}
+
+/**
+ * Returns whether a line sticks out more than `MAX_STEP` columns past the line right above it.
  */
 function hasStep(lines: readonly (readonly string[])[], offset = 0): boolean {
-  return lines.some((line, index) => {
-    if (index === 0) {
-      return false;
+  const ends = lineEnds(lines, offset);
+
+  return ends.some((end, index) => index > 0 && end - ends[index - 1] > MAX_STEP);
+}
+
+/**
+ * Returns whether a line sticks out more than `MAX_STEP` columns past any line above it. A step
+ * does, and so do lines that climb in smaller steps, like lines of 67, 76, and 85 columns.
+ * Even lines turn a step into such a climb, whose last line sticks out as far as the step did.
+ */
+function hasClimb(lines: readonly (readonly string[])[], offset = 0): boolean {
+  let shortest = Infinity;
+
+  for (const end of lineEnds(lines, offset)) {
+    if (end - shortest > MAX_STEP) {
+      return true;
     }
 
-    const before = lineLength(lines[index - 1]) + (index === 1 ? offset : 0);
+    shortest = Math.min(shortest, end);
+  }
 
-    return lineLength(line) - before > MAX_STEP;
-  });
+  return false;
+}
+
+/**
+ * Returns how many columns apart the lines end, from the shortest to the longest. The last line
+ * only counts as the longest, since it may end any number of columns before the others.
+ */
+function edgeSpread(lines: readonly (readonly string[])[], offset = 0): number {
+  const ends = lineEnds(lines, offset);
+  const body = ends.length > 1 ? ends.slice(0, -1) : ends;
+
+  return Math.max(...ends) - Math.min(...body);
 }
 
 /**
@@ -1149,9 +1186,12 @@ function hasParentheticals(tokens: readonly string[], restLimit: number, options
 }
 
 /**
- * Lays the tokens out in even lines. When a line sticks out far past the line before it, like a
- * full second line after a first line that the orphan rule keeps short, the layout takes up to
- * `EXTRA_LINES` more lines if those avoid the step.
+ * Lays the tokens out in even lines. When a line sticks out far past a line above it, like a
+ * full second line after a first line that the orphan rule keeps short, the layout takes up
+ * to `EXTRA_LINES` more lines if those are worth it. They are when the lines then end within
+ * `MAX_STEP` columns of each other, and at least `MIN_LINE_GAIN` columns closer together for
+ * each line more (see `edgeSpread`). Without such a layout, it takes the fewest lines that
+ * have no step, or else the fewest lines.
  */
 export function layoutTokens(
   tokens: readonly string[],
@@ -1163,30 +1203,45 @@ export function layoutTokens(
   const offset = restLimit - firstLimit;
 
   // the first line of a JSDoc tag is never balanced, and the lines after it get their own layout
-  if (options.keepFirstLine || options.keepSteps || !hasStep(lines, offset)) {
+  if (options.keepFirstLine || options.keepSteps || !hasClimb(lines, offset)) {
     return lines;
   }
 
   const overflow = hasParentheticals(tokens, restLimit, options) ? (options.parentheticalOverflow ?? 0) : 0;
   const splitCosts = overflow > 0 ? splitCostsOf(tokens, restLimit + overflow) : new Map<number, number>();
 
-  for (let count = lines.length + 1; count <= lines.length + EXTRA_LINES; count += 1) {
-    const even = balanceTokens(
+  const spread = edgeSpread(lines, offset);
+
+  // when no more lines are worth it, the fewest lines without a step win, even if they still climb
+  let stepless = hasStep(lines, offset) ? undefined : lines;
+
+  for (let extra = 1; extra <= EXTRA_LINES; extra += 1) {
+    const balanced = balanceTokens(
       tokens,
       firstLimit + overflow,
       restLimit + overflow,
-      count,
+      lines.length + extra,
       options,
       restLimit,
       splitCosts,
     );
 
-    if (even && !hasStep(even, offset)) {
-      return even;
+    if (!balanced) {
+      continue;
+    }
+
+    const narrowed = edgeSpread(balanced, offset);
+
+    if (narrowed <= MAX_STEP && spread - narrowed >= extra * MIN_LINE_GAIN) {
+      return balanced;
+    }
+
+    if (!hasStep(balanced, offset)) {
+      stepless ??= balanced;
     }
   }
 
-  return lines;
+  return stepless ?? lines;
 }
 
 /**
