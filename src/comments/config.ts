@@ -119,11 +119,12 @@ export interface CommentsConfig {
    * or more lines, or evens the lines out. A paragraph that already has one of those layouts also
    * passes as it is, unless it has more lines than the rewrap. So does a paragraph with as many
    * lines as the rewrap, or as the layout for `width` itself, whose lines, the last aside, are at
-   * most this many columns shorter than the shortest of them in that layout, and end at most this
-   * many columns past `width`. The last line of a paragraph only goes past `width` when it then
-   * ends at most this many columns after the longest line before it, both in a rewrap and in a
-   * paragraph that passes as it is. The tolerance never reaches past `maxWidth`. When `maxWidth`
-   * is omitted, it also sets a legacy hard limit of `width + tolerance` columns.
+   * most this many columns shorter than the shortest of them in that layout, and whose lines are
+   * at most this many columns longer than the longest of them and end at most this many columns
+   * past `width`. The last line of a paragraph only goes past `width` when it then ends at most
+   * this many columns after the longest line before it, both in a rewrap and in a paragraph that
+   * passes as it is. The tolerance never reaches past `maxWidth`. When `maxWidth` is omitted, it
+   * also sets a legacy hard limit of `width + tolerance` columns.
    */
   readonly tolerance?: number;
 

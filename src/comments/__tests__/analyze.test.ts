@@ -344,8 +344,8 @@ describe('analyzeSource', () => {
           ]);
         });
 
-        it('accepts a paragraph with the layout for no width whose lines stay within the tolerance', () => {
-          // lines of 105, 98, 94, and 73 columns, where the layout for the width itself has 85, 99, 98, and 88
+        it('reports lines near no layout, when only the first line is far from the layout for the width', () => {
+          // lines of 105, 98, 94, and 73 columns, 6 more than the longest of the 85, 99, 98, and 88 for the width
           const moved = jsdoc(
             'Implements the bounded queue and lifecycle machinery shared by `RelayDatagram` and `RelayAnyDatagram`.',
             'It owns the client-to-remote queue and its pump, the backend closed watcher, and the idempotent',
@@ -353,8 +353,8 @@ describe('analyzeSource', () => {
             'validation and the recv-to-frame mapping stay in the concrete classes.',
           );
 
-          expect(issuesOf(moved, settings)).toEqual([]);
-          expect(fix(moved, settings)).toBe(moved);
+          expect(issuesOf(moved, settings)).toEqual(['3:unbalanced:verdict']);
+          expect(fix(moved, settings)).toBe(wider);
 
           expect(issuesOf(moved, { ...settings, tolerance: 4 })).toEqual(['2:wide:verdict']);
           expect(fix(moved, { ...settings, tolerance: 4 })).toBe(evened);
@@ -416,6 +416,26 @@ describe('analyzeSource', () => {
         it('reports them without a tolerance, and wraps to the suggestion', () => {
           expect(issuesOf(close, { ...settings, tolerance: 0 })).toEqual(['8:unbalanced:verdict']);
           expect(fix(close, { ...settings, tolerance: 0 })).toBe(preferred);
+        });
+
+        it('reports a line more than the tolerance longer than the longest line of the suggestion', () => {
+          // `future` moved up, which gives the second line 96 columns, 7 more than the 89 of the suggestion
+          const filled = jsdoc(
+            'Holds the future beside its count instead of awaiting it in an `async` block, because',
+            '`future_to_promise` already wraps its input in one, and a second block would store the future',
+            'twice and copy it on its first poll.',
+          );
+
+          const balanced = jsdoc(
+            'Holds the future beside its count instead of awaiting it in an `async` block, because',
+            '`future_to_promise` already wraps its input in one, and a second block would store the',
+            'future twice and copy it on its first poll.',
+          );
+
+          expect(issuesOf(filled, settings)).toEqual(['3:unbalanced:verdict']);
+          expect(fix(filled, settings)).toBe(balanced);
+          expect(issuesOf(balanced, settings)).toEqual([]);
+          expect(issuesOf(filled, { ...settings, tolerance: 7 })).toEqual([]);
         });
 
         it('accepts a line past the width plus the tolerance that the suggestion has too', () => {

@@ -1321,12 +1321,13 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
   };
 
   /**
-   * The tolerance holds for each line on its own too. A paragraph with as many lines as the
-   * suggestion is fine as it is when each line but the last is at most the tolerance shorter
-   * than the shortest of those lines in the suggestion, and no line ends past what the tolerance
-   * allows it, unless the same line of the suggestion ends past it too. The shortest line is the
-   * measure, since one word that moves shifts every line after it. No line may end inside text
-   * that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
+   * The tolerance holds for each line on its own too. A paragraph with as many lines as
+   * the suggestion is fine as it is when each line but the last is at most the tolerance
+   * shorter than the shortest of those lines in the suggestion, and no line is more than
+   * the tolerance longer than the longest of them or ends past what the tolerance allows
+   * it, unless the same line of the suggestion is as long. The shortest and longest lines
+   * are the measure, since one word that moves shifts every line after it. No line may end
+   * inside text that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
    *
    * Which words a line ends with is a heuristic, so lines close to a rewrap where fewer of those
    * words cost extra are fine too, and so are lines close to the layout without a tolerance.
@@ -1341,12 +1342,16 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
         return false;
       }
 
-      const shortest = Math.min(...layout.slice(0, -1).map((words) => words.join(' ').length));
+      const body = layout.slice(0, -1).map((words) => words.join(' ').length);
+      const shortest = Math.min(...body);
+      const longest = Math.max(...body);
 
       return lengths.every((length, position) => {
+        const limit = Math.min(tolerated[position], longest + layoutOptions.tolerance);
+
         return (
           (position === lastLine || length >= shortest - layoutOptions.tolerance) &&
-          length <= Math.max(layout[position].join(' ').length, tolerated[position])
+          length <= Math.max(layout[position].join(' ').length, limit)
         );
       });
     };
