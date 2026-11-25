@@ -1,9 +1,9 @@
 # @d3lm/lint-preset
 
-Opinionated dual-lint preset for JavaScript and TypeScript projects.
+Opinionated Oxlint + ESLint preset for JavaScript and TypeScript projects, with a `comments` CLI for keeping prose comments tidy.
 
-- **[Oxlint](https://oxc.rs/docs/guide/usage/linter)** runs the bulk of the rule set, including type-aware rules (via [`oxlint-tsgolint`](https://www.npmjs.com/package/oxlint-tsgolint))
-- **[ESLint](https://eslint.org/)** layers on only the rules Oxlint can't run yet (e.g. `@typescript-eslint/naming-convention`, a handful of unicorn rules, and ESLint-core gaps)
+- **[Oxlint](https://oxc.rs/docs/guide/usage/linter)** runs the bulk of the rule set, including type-aware rules (via [`oxlint-tsgolint`](https://www.npmjs.com/package/oxlint-tsgolint)) and JS plugins (`@d3lm`, `@stylistic`, `prettier`, and the unicorn and jsdoc rules that Oxlint doesn't port, under the aliases `unicornx` and `jsdocx`).
+- **[ESLint](https://eslint.org/)** layers on only the rules Oxlint can't run yet (such as `@typescript-eslint/naming-convention`, `unicorn/expiring-todo-comments`, and a few ESLint-core rules).
 
 ## Installation
 
@@ -11,21 +11,21 @@ Opinionated dual-lint preset for JavaScript and TypeScript projects.
 pnpm add -D @d3lm/lint-preset
 ```
 
-The preset relies on a set of peer dependencies that it does not bundle. pnpm (with `auto-install-peers`, the default) pulls them in for you. With npm or yarn, install them explicitly:
+pnpm installs peer dependencies automatically. With npm or yarn, install them explicitly, along with `prettier` and `typescript`, which those peers require:
 
 ```bash
-pnpm add -D oxlint oxlint-tsgolint eslint typescript-eslint @typescript-eslint/eslint-plugin @stylistic/eslint-plugin eslint-config-prettier eslint-plugin-prettier eslint-plugin-oxlint eslint-plugin-jsdoc eslint-plugin-unicorn
+npm install -D oxlint oxlint-tsgolint eslint typescript-eslint @typescript-eslint/eslint-plugin @stylistic/eslint-plugin eslint-config-prettier eslint-plugin-prettier eslint-plugin-oxlint eslint-plugin-jsdoc eslint-plugin-unicorn prettier typescript
 ```
 
-React linting is opt-in. If you enable it for ESLint, also install the optional React Hooks peer:
+If you enable React linting, also install the optional React Hooks peer, which no package manager installs automatically:
 
 ```bash
 pnpm add -D eslint-plugin-react-hooks
 ```
 
-## Consumer Setup
+## Quick Start
 
-### `oxlint.config.ts`
+### 1. `oxlint.config.ts`
 
 ```ts
 import { defineConfig } from 'oxlint';
@@ -36,31 +36,7 @@ export default defineConfig({
 });
 ```
 
-This pulls in the full rule set. Most rules run natively in Oxlint; a few plugins that Oxlint doesn't ship natively (custom `@d3lm` rules, `@stylistic`, `eslint-plugin-prettier`, `eslint-plugin-unicorn`, `eslint-plugin-jsdoc`) are wired in through Oxlint's `jsPlugins`. Either way you can toggle individual rules off in the same config.
-
-React rules are disabled by default. Enable them by creating the shared config with `react: true`:
-
-```ts
-import { defineConfig } from 'oxlint';
-import { createOxlintConfig } from '@d3lm/lint-preset/oxlint';
-
-export default defineConfig({
-  extends: [createOxlintConfig({ react: true })],
-});
-```
-
-`react` also accepts an object to toggle the two opt-in groups independently (both default to `true` when `react` is enabled):
-
-```ts
-createOxlintConfig({
-  react: {
-    fastRefresh: true, // react/only-export-components
-    performance: true, // react-perf/* rules
-  },
-});
-```
-
-### `eslint.config.js`
+### 2. `eslint.config.js`
 
 ```js
 import { eslintConfig } from '@d3lm/lint-preset/eslint';
@@ -72,42 +48,7 @@ export default eslintConfig({
 });
 ```
 
-React Hooks linting is also opt-in:
-
-```js
-import { eslintConfig } from '@d3lm/lint-preset/eslint';
-import { createOxlintConfig } from '@d3lm/lint-preset/oxlint';
-
-const oxlintConfig = createOxlintConfig({ react: true });
-
-export default eslintConfig({
-  oxlintConfig,
-  react: true,
-  tsconfigRootDir: import.meta.dirname,
-});
-```
-
-The factory returns a `Linter.Config[]` you can spread, so you can append project-specific overrides:
-
-```js
-import { eslintConfig } from '@d3lm/lint-preset/eslint';
-import { oxlintConfig } from '@d3lm/lint-preset/oxlint';
-
-export default [
-  ...eslintConfig({
-    oxlintConfig,
-    tsconfigRootDir: import.meta.dirname,
-  }),
-  {
-    files: ['src/lib/**/*.ts'],
-    rules: { '@typescript-eslint/no-floating-promises': 'off' },
-  },
-];
-```
-
-Overrides spread _after_ `eslintConfig(...)` land after the Oxlint disabler, which is fine for turning rules **off**. To turn a rule back **on** that Oxlint owns, use `extraConfigs` instead (see below) so it isn't immediately disabled again — otherwise you'll get double-reporting from both linters.
-
-### `package.json`
+### 3. `package.json`
 
 ```json
 {
@@ -118,259 +59,203 @@ Overrides spread _after_ `eslintConfig(...)` land after the Oxlint disabler, whi
 }
 ```
 
-Oxlint runs first (fast feedback on the majority of issues) and ESLint only reports what Oxlint didn't cover.
+## Configuration
 
-## ESLint Config Factory Options
+### React
+
+React rules are opt-in. Enable them on both configs via `createOxlintConfig` and `eslintConfig`:
 
 ```ts
-eslintConfig({
-  /**
-   * Oxlint config object that eslint-plugin-oxlint reads to decide which
-   * ESLint rules to turn off. Prefer this when your Oxlint config is created
-   * in TypeScript.
-   */
-  oxlintConfig,
+// oxlint.config.ts
+import { defineConfig } from 'oxlint';
+import { createOxlintConfig } from '@d3lm/lint-preset/oxlint';
 
-  /**
-   * Path to a JSON/JSONC oxlint config file that eslint-plugin-oxlint reads
-   * to decide which ESLint rules to turn off. Ignored when `oxlintConfig` is
-   * provided.
-   *
-   * @default '.oxlintrc.json'
-   */
-  oxlintConfigPath: './.oxlintrc.json',
-
-  /**
-   * TypeScript project-service root. Usually `import.meta.dirname`.
-   */
-  tsconfigRootDir: import.meta.dirname,
-
-  /**
-   * Enable the ESLint-side React Hooks config. Pass `true`, or an object
-   * `{ fastRefresh?, performance? }` mirroring the Oxlint factory. Requires
-   * the optional `eslint-plugin-react-hooks` peer.
-   *
-   * @default false
-   */
-  react: true,
-
-  /**
-   * Files allowed to fall back to the default inferred project when they
-   * aren't covered by the main tsconfig (e.g. top-level config files).
-   *
-   * @default ['*.config.ts', '*.config.mts', '*.config.cts', '*.config.js']
-   */
-  allowDefaultProject: ['*.config.ts', '*.config.js'],
-
-  /**
-   * Extra patterns to ignore. Layered on top of the built-in defaults unless
-   * you opt out via `extendDefaultIgnores: false`.
-   */
-  ignores: ['generated/**'],
-
-  /**
-   * Whether to extend the built-in ignores with the ones passed in `ignores`.
-   *
-   * @default true
-   */
-  extendDefaultIgnores: true,
-
-  /**
-   * Flat-config entries layered *before* the Oxlint disabler, so custom
-   * rules are still subject to the "Oxlint turns off last" ordering.
-   */
-  extraConfigs: [],
-
-  /**
-   * Optional rule-shape overrides forwarded to the TypeScript rule set,
-   * including per-selector `namingConvention` exceptions.
-   */
-  namingConvention: {
-    variable: { exceptions: ['MyGlobal'] },
-  },
-
-  /**
-   * Tune unicorn's `name-replacements` (formerly `prevent-abbreviations`).
-   * Extends the built-in allow list and replacements by default; set
-   * `inheritAllowList` / `inheritReplacements` to false to replace them
-   * outright.
-   */
-  preventAbbreviations: {
-    allowList: ['args'],
-    replacements: { props: false },
-  },
+export default defineConfig({
+  extends: [createOxlintConfig({ react: true })],
 });
 ```
 
-## Oxlint Config Factory Options
+```js
+// eslint.config.js
+import { eslintConfig } from '@d3lm/lint-preset/eslint';
+import { createOxlintConfig } from '@d3lm/lint-preset/oxlint';
 
-`createOxlintConfig` accepts the React options shown above plus the same rule-shape overrides, scoped to the Oxlint rule set:
+export default eslintConfig({
+  oxlintConfig: createOxlintConfig({ react: true }),
+  react: true,
+  tsconfigRootDir: import.meta.dirname,
+});
+```
+
+You can also toggle React rule groups individually (both default to `true` when `react` is enabled):
 
 ```ts
 createOxlintConfig({
-  /**
-   * Toggle React rules (boolean or `{ fastRefresh?, performance? }`).
-   *
-   * @default false
-   */
-  react: true,
+  react: {
+    // react/only-export-components
+    fastRefresh: true,
 
-  /**
-   * Overrides forwarded to the JS rules (e.g. `preventAbbreviations`).
-   */
-  jsRulesOxlint: {
-    preventAbbreviations: { allowList: ['args'] },
-  },
-
-  /**
-   * Overrides forwarded to the TS rules (e.g. `namingConvention`).
-   */
-  tsRulesOxlint: {
-    namingConvention: { variable: { exceptions: ['MyGlobal'] } },
+    // react-perf/*
+    performance: true,
   },
 });
 ```
 
+### Customizing Rules & Overrides
+
+**Oxlint** uses standard `defineConfig` overrides and accepts rule-shape options via `createOxlintConfig`. TypeScript files get their rules from `tsRulesOxlint`, so pass an option to both `jsRulesOxlint` and `tsRulesOxlint` to apply it to every file:
+
+```ts
+import { defineConfig } from 'oxlint';
+import { createOxlintConfig } from '@d3lm/lint-preset/oxlint';
+
+const preventAbbreviations = { allowList: ['args'] };
+
+export default defineConfig({
+  extends: [
+    createOxlintConfig({
+      jsRulesOxlint: { preventAbbreviations },
+      tsRulesOxlint: { preventAbbreviations },
+    }),
+  ],
+  ignorePatterns: ['generated/**'],
+  rules: {
+    'no-console': 'off',
+  },
+});
+```
+
+**ESLint** returns a flat `Linter.Config[]` you can spread. Spread overrides _after_ `eslintConfig(...)` to disable rules, or pass `extraConfigs` to add rules _before_ `eslint-plugin-oxlint` disables overlapping ones:
+
+```js
+import { eslintConfig } from '@d3lm/lint-preset/eslint';
+import { oxlintConfig } from '@d3lm/lint-preset/oxlint';
+
+export default [
+  ...eslintConfig({
+    oxlintConfig,
+    tsconfigRootDir: import.meta.dirname,
+    ignores: ['generated/**'],
+    namingConvention: {
+      variable: { exceptions: ['MyGlobal'] },
+    },
+  }),
+  {
+    files: ['src/lib/**/*.ts'],
+    rules: { '@typescript-eslint/no-floating-promises': 'off' },
+  },
+];
+```
+
+### Options Reference
+
+#### `eslintConfig(options)`
+
+| Option                 | Default                    | Description                                                                                                                                              |
+| ---------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oxlintConfig`         | —                          | Oxlint config object used to disable overlapping ESLint rules.                                                                                           |
+| `oxlintConfigPath`     | `'.oxlintrc.json'`         | Path to a JSON/JSONC Oxlint config (ignored when `oxlintConfig` is set).                                                                                 |
+| `tsconfigRootDir`      | —                          | TypeScript project-service root (usually `import.meta.dirname`).                                                                                         |
+| `react`                | `false`                    | Any truthy value enables `eslint-plugin-react-hooks`. Takes the same value as the Oxlint option, but `fastRefresh` and `performance` only affect Oxlint. |
+| `allowDefaultProject`  | `*.config.{ts,mts,cts,js}` | Files allowed to fall back to the default TS project when not in `tsconfig.json`. The default is one glob per extension.                                 |
+| `ignores`              | `[]`                       | Extra ignore patterns, appended to defaults (`dist/**`, `node_modules/**`, `coverage/**`).                                                               |
+| `extendDefaultIgnores` | `true`                     | Set `false` to replace built-in ignores with `ignores`.                                                                                                  |
+| `extraConfigs`         | `[]`                       | Flat configs layered _before_ the Oxlint disabler.                                                                                                       |
+| `namingConvention`     | —                          | Per-selector exceptions/format overrides for `@typescript-eslint/naming-convention`.                                                                     |
+
+#### `createOxlintConfig(options)`
+
+| Option          | Default | Description                                                                  |
+| --------------- | ------- | ---------------------------------------------------------------------------- |
+| `react`         | `false` | Enables React plugins/rules (`boolean` or `{ fastRefresh?, performance? }`). |
+| `jsRulesOxlint` | —       | `{ preventAbbreviations }` for JavaScript files.                             |
+| `tsRulesOxlint` | —       | `{ preventAbbreviations }` for TypeScript files.                             |
+
+`preventAbbreviations` configures `unicornx/name-replacements` (formerly unicorn's `prevent-abbreviations`). Its `allowList` and `replacements` extend the built-in ones, unless you set `inheritAllowList` or `inheritReplacements` to `false`. The abbreviation rule only runs in Oxlint, and `naming-convention` only runs in ESLint, so pass each option to the factory that runs its rule.
+
 ## Comment Formatting (`comments`)
 
-The preset ships a `comments` CLI that checks how comments in JavaScript, TypeScript, and Rust files fit the configured width. Line breaks are left to the tool, except where only the meaning of the prose shows whether a line ends with the start of a sentence. `list`, `check`, and `wrap` never change files. By default, `agent` and the hook send an agent only the comments with hints, plus comments with issues in parts the tool never rewraps (see [Text Kept as Written](#text-kept-as-written)). That default is a cheap triage, not a full review of the language. With `--failing` or `agent.scope: 'failing'`, the agent only gets the comments that fail `check`, and none that only have hints. With `--all` or `agent.scope: 'all'`, the agent reviews the wording of every comment in scope against its rules. The agent fixes the wording and moves the start of a sentence to the next line where a hint applies. Then the tool applies its exact rewrap to every comment in scope that still has a layout issue. A comment that the agent changed needs the exact layout of its rewrap, since its line breaks are for the tool to choose, so the `tolerance` doesn't accept its lines as they are. Only a paragraph where a hint is left keeps the line breaks the agent chose. The rewrap only changes whitespace in prose, like line breaks, runs of spaces, trailing spaces, and the indentation of continuation lines. It never changes a word, a punctuation character, a code span, or text kept as written, and it keeps the line endings of the file. Comments are found with a real parser, so strings, template literals, and regexes never produce false matches. Block and JSDoc comments get every check. Line comments (`//`) are never rewrapped, and they are only reported when a line is longer than `maxWidth` (see [Text Kept as Written](#text-kept-as-written)). Rust files get the same checks for their doc comments too (see [Rust](#rust)).
+The preset ships a `comments` CLI that checks and wraps prose comments in JavaScript, TypeScript, and Rust files. `list`, `check`, and `wrap` never change files. `agent` and `hook` hand comments to a coding agent to fix their wording, then rewrap every comment that still has a layout issue. The rewrap only changes whitespace, never words, punctuation, or code.
+
+### Commands
 
 ```bash
-comments list                      # comments in uncommitted changes, with line lengths and issues
-comments list src --suspicious     # only comments with issues or hints
-comments check --base main         # print layout violations and exit with code 1 if any remain
-comments list src/a.ts:42 --json   # the comment on line 42, with its rewrap suggestion
-comments wrap src/a.ts:42          # print the exact rewrap of that comment to stdout
-comments agent                     # hand suspicious comments to an agent, then verify the result
-comments agent --failing           # hand only the comments that fail check to an agent
-comments agent -p "Reword freely"  # append your own instructions to the agent's prompt
-comments check --cwd ../other-app  # run as if started in another project
+comments list                      # inspect comments in uncommitted changes
+comments list src --suspicious     # only comments with verdicts or hints
+comments check --base main         # fail (exit 1) on layout violations since main
+comments wrap src/a.ts:42          # print the exact rewrap of one comment
+comments agent                     # fix flagged comments with an agent, then rewrap
+comments agent --all               # review wording of every comment in scope
+comments agent -p "Reword freely"  # append extra instructions for this run
 ```
 
-Without targets, only comments in uncommitted changes and untracked files are checked. `--base main` checks everything since the merge base with `main`, and `--repo` checks every file. `--whole-files` checks every comment in the changed files instead of only the comments on changed lines. Targets can be files, directories, `file:line`, or `file:start-end`. A comment that contains `comments-ignore` is skipped. A file with a syntax error is skipped as a whole and named in a warning, because the parser stops at the error and never sees the comments after it. JSX is read in `.js` files too.
-
-With `--json`, each paragraph of a comment comes with its issues and a `suggestion` that holds the exact rewrapped lines. Code blocks, `@example`, tables, drawings, directives, and other [text kept as written](#text-kept-as-written) have no suggestion.
-
-### Issues
-
-Verdicts are layout issues that can be measured without reading the prose. They fail `comments check`:
-
-- `overflow` means a measured prose line exceeds `maxWidth`
-- `underfill` means a line ends early, so the paragraph needs more lines than it should
-- `widow` means fewer than three words sit on the last line of a paragraph
-- `unbalanced` means the lines are less even than in the suggested rewrap, or a line ends inside a link, code span, or `{...}` group (see [Text That Stays on One Line](#text-that-stays-on-one-line))
-- `wide` means a line ends more than `tolerance` columns past `width`, and past every line of the suggested rewrap, but within `maxWidth`, or the last line of a paragraph ends past `width` and more than `tolerance` columns after the longest line before it
-
-Hints come from heuristics and can be false positives, because only the meaning of the prose shows whether the rule applies. A hint only sends a comment to the agent, which decides whether to change it. `check` only prints comments with verdicts, so a passing check stays quiet apart from its summary, even when hints remain after review. Use `list --suspicious` to inspect hints, which are marked with `(hint)` and never fail a check:
-
-- `orphan` means a line ends with the first word of a sentence or parenthetical, or with the first word after a semicolon or colon (but not after a comma), a line ends with the first two words of a sentence, the first word after a comma other than `and`, `or`, or `nor`, or an article like `the`, that the suggested rewrap moves to the next line, or the first of two lines ends with the start of a sentence that fits on the second without making it longer than the first
-- `split-parenthetical` means a line ends inside a parenthetical that the suggested rewrap keeps on one line within `maxWidth`
-- `em-dash` means the comment uses `—`
-- `dash` means the comment uses `–` or `--` between words
-- `semicolon` means the comment joins clauses with a semicolon
-- `label-colon` means the comment uses the "label: explanation" pattern
-- `emphasis` means the comment uses `*emphasis*` or `**bold**`
-- `banner` means the comment is a divider made of repeated characters
-
-A paragraph with an `orphan` hint is not reported as `unbalanced` when that word is all that sets it apart from the suggested rewrap, because the agent may rightly keep the word where it is. This holds when the paragraph matches the rewrap that allows orphans. A paragraph that differs from that rewrap too, like a line that ends with the hinted word while more words fit on it, is still `unbalanced`. A line that ends early is still an `underfill`, whatever its last word is.
-
-In the same way, a paragraph that splits a parenthetical is not reported as `unbalanced` when the split is all that sets it apart from the suggested rewrap, because the split can read as well and keep the line closer to `width`. This holds when the lines before the split match the rewrap and the lines after it match the rewrap of the text after the split. Otherwise the paragraph is still `unbalanced`.
-
-The rewrap takes the fewest lines that hold the paragraph and makes them as even as it can. It only takes more lines when a line then sticks out more than 15 columns past a line above it. That happens when a full line follows a first line that ends early with a sentence, and also when the even lines climb in smaller steps, like lines of 71, 80, and 89 columns. The rewrap then takes up to two more lines if they are worth it. They are when the lines then end within 15 columns of each other, and at least 8 columns closer together for each line more. A last line that ends before the others doesn't count. The three lines above become lines of 71, 74, 73, and 25 columns, and a paragraph that is written that way has no `underfill`, since its rewrap has as many lines. When no more lines are worth it, the rewrap takes the fewest lines in which no line sticks out more than 15 columns past the line right above it, or else the fewest lines.
-
-With a `tolerance`, the rewrap lays a paragraph out for `width` and for each width up to `tolerance` columns wider, and keeps the layout with the fewest lines and then the most even right edge. An edge is more even when the lines before the last end closer to the longest of them, and a last line that ends past them counts too. A line that ends inside a sentence, with an article like `the`, or with the first word after a comma costs a little, and so does each column past `width`, so of two edges that are about as even, the one that ends more lines with a sentence and stays closer to `width` wins. A paragraph with a parenthetical that may go past `width` keeps its layout for `width`, since it already has room up to `maxWidth`.
-
-The tolerance is room that the rewrap may take, not room that it must take. A paragraph has no `underfill`, `widow`, `unbalanced`, or `wide` verdict when it already has the layout that the tool produces for `width` or for a width up to `width` plus `tolerance` without a tolerance, and it has no more lines than the suggested rewrap. Its suggestion then keeps the lines as they are. With `width: 100` and `tolerance: 5`, a paragraph that is laid out the way the tool lays it out for a width of 103 passes. A paragraph that only has hints keeps them, and a line past `maxWidth` is still an `overflow`.
-
-The `tolerance` also holds for each line on its own. A paragraph is not `unbalanced` when it has as many lines as the suggested rewrap, each line but the last is at most `tolerance` columns shorter than the shortest of those lines in the rewrap, and no line is more than `tolerance` columns longer than the longest of them or ends more than `tolerance` columns past `width`, unless the same line of the rewrap is as long. Its suggestion then keeps the lines as they are too. Which words a line ends with is a heuristic, so the same holds for the rewrap that only keeps the first words of a sentence off the end of a line, and for the rewrap that lets a line end with any word. It also holds for the layout for `width` without a tolerance. The shortest and longest lines of the rewrap are the measure, not the same line, since one word that moves to another line shifts every line after it. With `width: 100` and `tolerance: 5`, a paragraph whose rewrap has lines of 92 to 98 columns passes with lines of 87 to 103 columns, the last line aside. Without a `tolerance`, a paragraph needs the exact layout of the rewrap. This only applies to a paragraph whose only layout issue is `unbalanced`, so a line that is `wide` is still reported. A `widow` is still reported, and so is a paragraph that has an `orphan` hint too, so the rewrap still moves that word. A line that ends inside a link, code span, `{...}` group, or the head of a JSDoc tag is still `unbalanced` as well.
-
-The `tolerance` never makes the last line of a paragraph stick out. That line may only end past `width` when it then ends at most `tolerance` columns after the longest line before it. With `width: 100` and `tolerance: 5`, the rewrap never ends a paragraph with lines of 93 and 105 columns, whose last line holds the words of a third line. It gives three lines within 100 columns, while lines of 100 and 105 columns still save that line. A paragraph that is written with lines of 93 and 105 columns is `wide` on its last line, although it has the layout for a width of 105. A last line may still end past `width` to keep a parenthetical on one line.
-
-Hints are only checked in prose, never in code spans, code blocks, `@example`, or URLs. Rules that can't be measured, like writing complete sentences, are part of the agent's prompt (see `DEFAULT_RULES` in `src/comments/agent.ts`). The prompt treats the style rules as preferences, so the agent keeps punctuation that carries meaning or reads clearly, and never changes code, code spans, literals, patterns, or quotations.
-
-### Text That Stays on One Line
-
-The rewrap never breaks a line inside a code span, a `{...}` group like a JSDoc type or `{@link ...}`, or a Markdown link like `[text](target)`, `[text][label]`, or `[text]`. Links split across lines can't be followed in an editor, so a line that ends inside one of these is `unbalanced`, and the rewrap joins it. If one is too long to fit within `maxWidth`, it stays intact and is reported as `overflow`.
-
-### Text Kept as Written
-
-The tool only rewraps prose paragraphs, list items, and JSDoc tag descriptions. Everything else keeps its line breaks and has no suggestion:
-
-- **Code** gets no checks except `banner`. This covers code blocks, `@example`, `@default`, tool directives like `eslint-disable-next-line`, legal comments, and paragraphs that parse as code.
-- **Layout syntax** gets hints but no verdicts. This covers Markdown tables, box-drawing characters, divider lines, and aligned columns.
-- **Text that only looks like code or hand layout** keeps its line breaks, but it still gets `overflow`.
-- **Line comments** (`//`) only get `overflow`. To fix one, the agent shortens it or turns it into a block comment, which the tool then rewraps.
-
-To keep a drawing that's wider than the width, put it in a code fence or add `comments-ignore` to the comment.
-
-### Rust
-
-In `.rs` files, the tool checks doc comments (`///`, `//!`, `/** */`, `/*! */`) and plain block comments the same way it checks JSDoc. Plain `//` comments only get `overflow`. Comments are found with rustc's own lexer, which ships as a native addon built with [NAPI-RS](https://napi.rs). Doctests, intra-doc links, and anything else that would change what rustdoc renders are left intact.
-
-The width defaults to `comment_width` from `rustfmt.toml`, or 80 if it isn't set. Setting `width` in the `comments` config overrides it.
-
-The addon ships for macOS (arm64, x64) and Linux with glibc (x64, arm64). On other platforms, Rust files fail with a message that explains how to build the addon (`pnpm run build:native`, which needs a Rust toolchain). To skip Rust files, leave `.rs` out of `extensions`.
-
-`native/verify/verify.mjs` checks that rewrapping Rust comments never changes code or rustdoc output. It runs on a fixture crate and, optionally, on a `--corpus` of real crates:
-
-```bash
-pnpm run build
-node native/verify/verify.mjs --corpus ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f
-```
+By default, commands check comments on uncommitted lines (including untracked files). Pass targets (`file`, `dir`, `file:line`, `file:start-end`) or scope flags (`--base <ref>`, `--repo`, `--whole-files`, `--include`, `--ignore`). Add `comments-ignore` inside any comment to skip it. Run `comments --help` for all flags.
 
 ### Configuration
 
-`width` is the preferred line length, and `maxWidth` is the hard maximum, including indentation and the comment prefix. The CLI defaults `maxWidth` to 120, or to `width` if that is larger. The wrapper may go past `width`, up to `maxWidth`, to keep a parenthetical on one line. `tolerance` (default 0) lets lines go that many columns past `width` when that saves a line in a paragraph of three or more lines or makes the right edge more even (see [Issues](#issues)). The last line of a paragraph only goes past `width` when it then ends at most `tolerance` columns after the longest line before it. `check` also accepts a paragraph that already has the layout for `width` or for a wider `width`, up to `width` plus `tolerance`, and a paragraph with as many lines as the suggested rewrap whose lines stay within `tolerance` columns of its shortest and longest lines and of `width`. A comment that is one paragraph stays on one line up to `singleLineWidth` plus `tolerance`, capped by `maxWidth`. A word, code span, or link longer than `maxWidth` is never split and is reported as `overflow`.
-
-Like prettier, `comments` looks for a config file in the current directory and its parents, up to the repository root. The config can be a `comments.config.{ts,mts,js,mjs,cjs}`, `.commentsrc`, or `.commentsrc.json` file, or a `comments` key in `package.json`. All options are optional.
+`comments` searches upward from the working directory, up to the repository root, for `comments.config.{ts,mts,js,mjs,cjs}`, `.commentsrc`, `.commentsrc.json`, or a `"comments"` field in `package.json`. All fields are optional:
 
 ```ts
 // comments.config.ts
 import { defineConfig } from '@d3lm/lint-preset/comments';
 
 export default defineConfig({
-  // defaults to prettier's printWidth, or 80, and to rustfmt's comment_width in Rust files
+  // Defaults to Prettier's printWidth (or 80), and rustfmt's comment_width in .rs files. Setting it overrides both
   width: 100,
+  // Hard limit. Defaults to 120, or to `width + tolerance` when only `tolerance` is set
   maxWidth: 120,
-  tolerance: 0,
-  singleLineWidth: 120,
+  tolerance: 0, // extra columns past `width` allowed to save a line or balance edges
+  singleLineWidth: 120, // keep one-paragraph comments on one line up to this width
   avoidSentenceOrphans: true,
-  // report the style hints, like `em-dash` and `semicolon`
-  style: true,
-  // only these files, unless `ignore` skips them
+  style: true, // flag style hints (em-dash, semicolon, emphasis, banners, etc.)
   include: ['src/**'],
   ignore: ['src/generated/**'],
   agent: {
-    runner: 'claude', // or 'codex', 'cursor'
+    runner: 'claude', // 'claude' | 'codex' | 'cursor' (or use `command` for custom CLIs)
     model: 'haiku',
+    scope: 'suspicious', // 'suspicious' (default triage) | 'failing' | 'all'
     timeout: 300, // seconds per agent
-    batchSize: 20, // most comments per agent
-    maxFiles: 10, // most files per agent
-    maxAgents: 6, // most agents running at once
-    scope: 'suspicious', // a triage, 'failing' for only comments that fail check, or 'all' for every changed comment
+    batchSize: 20, // max comments per agent
+    maxFiles: 10, // max files per agent
+    maxAgents: 6, // max concurrent agents
     instructions: 'Rewording is allowed when a sentence reads awkwardly.',
+    // rules: './comment-rules.md', // replace built-in agent rules
   },
   hook: {
-    mode: 'agent', // or 'report', 'off'
+    mode: 'agent', // 'agent' | 'report' | 'off'
   },
 });
 ```
 
-Most options also have a command line flag that overrides the config file for a single run. See `comments --help` for the full list.
+Most options have matching CLI flags that override the config file for one run.
 
-`include` and `ignore` take globs relative to the repository root, and apply to every scope, including files and directories passed as targets. A file is checked when it has one of the `extensions`, matches an `include` glob (or `include` is empty), and matches no `ignore` glob. `--include` replaces `include` from the config file, and `--ignore` adds to `ignore`, so `comments check --repo --include '**/*.rs'` checks only Rust files, and `--ignore '**/*.rs'` skips them.
+### Issues & Hints
 
-Comments are split across several agents, and all comments of a file go to the same agent. In a terminal, `comments agent` shows the agents while they run, then lists the comments that still have issues. `--no-interactive` skips that list, and `--verbose` prints every agent's reply.
+- **Verdicts** (fail `comments check`): `overflow` (exceeds `maxWidth`), `underfill` (line ends too early), `widow` (fewer than 3 words on the last line), `unbalanced` (uneven lines or a broken link/code span/`{...}` group), and `wide` (a line ends more than `tolerance` columns past `width` and past every line of the suggested rewrap, or the last line sticks out past the lines before it).
+- **Hints** (never fail `check`; only select comments for `agent` and `hook` in the default `suspicious` scope): `orphan`, `split-parenthetical`, `em-dash`, `dash`, `semicolon`, `label-colon`, `emphasis`, and `banner`. Inspect them with `comments list --suspicious`.
 
-`agent.instructions` is appended to the rules, and `--instructions` replaces it for one run. `-p` or `--prompt` adds to it instead, so `comments agent --whole-files -p "Reword the comments so they read well"` keeps the instructions from the config file and appends the text after them. The rules only allow rewording where the instructions do, so that is where to allow it.
+The rewrap never breaks a line inside a code span, a `{...}` group, or a Markdown link, so a line that ends inside one is `unbalanced`. One that is longer than `maxWidth` stays intact and is reported as `overflow`.
 
-`agent.rules` points to a Markdown file that replaces the built-in formatting rules. `agent.command` runs any other agent CLI, like `['my-agent', '--prompt', '{prompt}']`. Without a `{prompt}` placeholder, the prompt goes to stdin.
+### Text Kept as Written
+
+Only prose paragraphs, list items, and JSDoc/rustdoc tag descriptions are rewrapped. Everything else keeps its line breaks:
+
+- **Code** (code blocks, `@example`, `@default`, tool directives like `eslint-disable-next-line`, legal comments, and paragraphs that parse as code) gets no checks except `banner`.
+- **Layout syntax** (Markdown tables, box-drawing characters, divider lines, and aligned columns) gets hints but no verdicts.
+- **Text that only looks like code or hand layout** keeps its line breaks, but still gets `overflow`.
+- **Line comments (`//`)** are never rewrapped and only get `overflow`.
+
+To preserve a wide ASCII diagram, put it in a code fence or add `comments-ignore` to the comment.
+
+**Rust support:** `.rs` doc comments (`///`, `//!`, `/** */`, `/*! */`) and block comments are parsed with rustc's lexer, using a prebuilt native addon (macOS arm64/x64 and Linux glibc x64/arm64). On other platforms, Rust files fail with a message that explains how to build the addon (`pnpm run build:native`, which needs a Rust toolchain). Exclude `.rs` via `ignore` or `extensions` if you don't need Rust support.
 
 ### Agent Stop Hooks
 
-`comments hook` runs when an agent finishes. It finds suspicious comments in the changed lines and hands them to a short-lived agent that doesn't keep a session. That catches what the hints point at, but it isn't a full review. With `--all` or `agent.scope: 'all'`, the agent reviews the wording of every changed comment, which costs an agent run whenever a comment changed. This repository uses `all`. Afterwards, the hook checks the edited comments again and reports any that still have verdicts. It also reports files where the agent changed code. In a git repository, it reports every other file that changed while the agents ran too, since an agent may only edit the comments it was given. That report can't tell an agent's edit from one of yours, so it never counts as a failure. When nothing is suspicious, no agent runs. The hook always exits successfully, so it never blocks the agent. That includes errors like an option it doesn't know, which it reports as a message instead.
+`comments hook` runs automatically when your coding agent finishes a turn. It checks comments in changed lines, runs a short-lived agent to clean up flagged comments, rewraps prose, and reports any remaining issues without ever blocking the session.
 
-Cursor (`.cursor/hooks.json`):
+By default, each host uses its own CLI as the runner (override with `agent.runner`). Make sure the hook timeout is larger than `agent.timeout` (300s default), and raise it if your changes often need more than `maxAgents` agents, since each extra round of agents can take up to `agent.timeout` again. Claude Code and Codex show the hook's summary in the UI, but Cursor only writes it to the hook output log.
+
+**Cursor** (`.cursor/hooks.json`):
 
 ```json
 {
@@ -381,7 +266,7 @@ Cursor (`.cursor/hooks.json`):
 }
 ```
 
-Claude Code (`.claude/settings.json`):
+**Claude Code** (`.claude/settings.json`):
 
 ```json
 {
@@ -401,7 +286,7 @@ Claude Code (`.claude/settings.json`):
 }
 ```
 
-Codex (`.codex/hooks.json`, then trust it once via `/hooks`):
+**Codex** (`.codex/hooks.json`, then trust it once via `/hooks`):
 
 ```json
 {
@@ -422,10 +307,6 @@ Codex (`.codex/hooks.json`, then trust it once via `/hooks`):
 }
 ```
 
-The host stops a hook that runs longer than its timeout. Leave room for one agent's `timeout` (300 seconds by default), and raise it if your changes often need more than `maxAgents` agents, because each extra round of agents can take up to `timeout` again.
-
-By default, each host uses its own CLI as the agent. Set `agent.runner` to always use the same one. Claude Code and Codex show the hook's summary in the UI, but Cursor only shows it in the hook output log.
-
 ## Development
 
 ```bash
@@ -435,4 +316,12 @@ pnpm run lint
 pnpm run test
 ```
 
-The repo dogfoods the preset via `oxlint.config.ts` + `eslint.config.js` at the root, both pointing at `./dist/*` so `pnpm run lint` always lints against a fresh build.
+`build` and `test` also build the native addon for Rust comments, so they need a Rust toolchain. `pnpm run check` type-checks without emitting.
+
+The repo dogfoods itself via `oxlint.config.ts` and `eslint.config.js` pointing at `./dist/*`, and `pnpm run lint` builds first so it always lints a fresh build.
+
+`native/verify/verify.mjs` checks that rewrapping Rust comments never changes code or what rustdoc renders. It runs on a fixture crate and, optionally, on a `--corpus` of real crates. It needs `pnpm run build` first, and a nightly toolchain for rustdoc's JSON output:
+
+```bash
+node native/verify/verify.mjs --corpus ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f
+```

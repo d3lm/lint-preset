@@ -1,7 +1,7 @@
 {
   "name": "@d3lm/lint-preset",
   "version": "1.6.8",
-  "description": "Opinionated Oxlint + ESLint preset. Oxlint handles non-type-aware rules, while ESLint layers only type-aware rules not covered by Oxlint on top.",
+  "description": "Opinionated Oxlint + ESLint preset for JavaScript and TypeScript projects, with a `comments` CLI for keeping prose comments tidy. Oxlint runs most rules, including type-aware ones, and ESLint only adds the rules Oxlint can't run yet.",
   "license": "MIT",
   "repository": {
     "type": "git",

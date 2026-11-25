@@ -941,6 +941,14 @@ function splitTokenLine(lines: readonly (readonly string[])[], tokens: readonly 
   });
 }
 
+/**
+ * Returns how many columns the line that sticks out furthest past the line above it ends after that
+ * line, or 0 when no line ends after the line above it.
+ */
+function highestRise(lengths: readonly number[]): number {
+  return Math.max(0, ...lengths.slice(1).map((length, position) => length - lengths[position]));
+}
+
 function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, language: Language): ParagraphReport {
   const first = paragraph.lines[0];
   const last = paragraph.lines.at(-1) ?? first;
@@ -1328,6 +1336,8 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
    * it, unless the same line of the suggestion is as long. The shortest and longest lines
    * are the measure, since one word that moves shifts every line after it. No line may end
    * inside text that the rewrap keeps on one line, like a link or the head of a JSDoc tag.
+   * No line may stick out further past the line above it than any line of the suggestion
+   * sticks out past the line above that, so the lines keep the edge of the suggestion.
    *
    * Which words a line ends with is a heuristic, so lines close to a rewrap where fewer of those
    * words cost extra are fine too, and so are lines close to the layout without a tolerance.
@@ -1342,16 +1352,21 @@ function analyzeParagraph(paragraph: RawParagraph, options: AnalyzeOptions, lang
         return false;
       }
 
-      const body = layout.slice(0, -1).map((words) => words.join(' ').length);
+      const layoutLengths = layout.map((words) => words.join(' ').length);
+      const body = layoutLengths.slice(0, -1);
       const shortest = Math.min(...body);
       const longest = Math.max(...body);
+
+      if (highestRise(lengths) > highestRise(layoutLengths)) {
+        return false;
+      }
 
       return lengths.every((length, position) => {
         const limit = Math.min(tolerated[position], longest + layoutOptions.tolerance);
 
         return (
           (position === lastLine || length >= shortest - layoutOptions.tolerance) &&
-          length <= Math.max(layout[position].join(' ').length, limit)
+          length <= Math.max(layoutLengths[position], limit)
         );
       });
     };

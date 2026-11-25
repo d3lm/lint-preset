@@ -378,8 +378,9 @@ describe('runs of Rust line doc comments', () => {
     expect(issues(rewrapped, settings)).toEqual([]);
     expect(fix(rewrapped, settings)).toBe(rewrapped);
 
-    expect(issues(source, settings)).toEqual([]);
-    expect(fix(source, settings)).toBe(source);
+    // the fifth line ends 5 columns after the fourth, while no line of the rewrap ends more than 2 after the one above
+    expect(issues(source, settings)).toEqual(['5:unbalanced']);
+    expect(fix(source, settings)).toBe(rewrapped);
   });
 
   it('accepts lines that one word moved down puts out of line with the rewrap, within the tolerance', () => {
@@ -406,7 +407,8 @@ describe('runs of Rust line doc comments', () => {
 
     const plain = { ...settings, avoidSentenceOrphans: false };
 
-    expect(issues(source, plain)).toEqual([]);
+    // the second line ends 5 columns after the first, while no line of that rewrap ends more than 3 after the one above
+    expect(issues(source, plain)).toEqual(['2:unbalanced']);
 
     // the first line has 90 columns, more than 1 fewer than the 92 of the shortest line of the rewrap
     expect(issues(source, { ...plain, tolerance: 1 })).toEqual(['2:unbalanced']);
@@ -554,7 +556,9 @@ describe('words at the end of a line', () => {
     ]);
 
     expect(issues(source, settings)).toEqual(['2:orphan']);
-    expect(issues(source, { ...settings, avoidSentenceOrphans: false })).toEqual([]);
+
+    // without the costs of those words, the second line ends 3 columns after the first, where the rewrap ends level
+    expect(issues(source, { ...settings, avoidSentenceOrphans: false })).toEqual(['1:unbalanced']);
   });
 });
 

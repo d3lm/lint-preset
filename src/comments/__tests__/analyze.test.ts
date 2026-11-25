@@ -435,7 +435,28 @@ describe('analyzeSource', () => {
           expect(issuesOf(filled, settings)).toEqual(['3:unbalanced:verdict']);
           expect(fix(filled, settings)).toBe(balanced);
           expect(issuesOf(balanced, settings)).toEqual([]);
-          expect(issuesOf(filled, { ...settings, tolerance: 7 })).toEqual([]);
+
+          // 7 columns of tolerance cover the 96 columns, but the second line ends 8 after the first, the suggestion's 1
+          expect(issuesOf(filled, { ...settings, tolerance: 7 })).toEqual(['3:unbalanced:verdict']);
+        });
+
+        it('reports a line that sticks out further past the line above it than the suggestion does', () => {
+          // `by` moved up, which ends the second line 4 columns after the first, where the suggestion ends it 1 after
+          const raised = jsdoc(
+            'Terminates the worker and has its host release the realm, which returns the stack and the',
+            'thread-local block that a terminated worker cannot return itself. The worker is terminated by',
+            'the time this returns, and the promise settles once the realm is released.',
+          );
+
+          const level = jsdoc(
+            'Terminates the worker and has its host release the realm, which returns the stack and the',
+            'thread-local block that a terminated worker cannot return itself. The worker is terminated',
+            'by the time this returns, and the promise settles once the realm is released.',
+          );
+
+          expect(issuesOf(raised, settings)).toEqual(['3:unbalanced:verdict']);
+          expect(fix(raised, settings)).toBe(level);
+          expect(issuesOf(level, settings)).toEqual([]);
         });
 
         it('accepts a line past the width plus the tolerance that the suggestion has too', () => {
@@ -617,8 +638,9 @@ describe('analyzeSource', () => {
           expect(issuesOf(kept, narrow)).toEqual([]);
           expect(fix(kept, narrow)).toBe(kept);
 
-          // one more column of tolerance covers the 4 columns, though the rewrap keeps the more even lines
-          expect(issuesOf(moved, { ...narrow, tolerance: 4 })).toEqual([]);
+          // one more column of tolerance covers the 4 columns, but the lines still climb, unlike those of the rewrap
+          expect(issuesOf(moved, { ...narrow, tolerance: 4 })).toEqual(['2:unbalanced:verdict']);
+          expect(fix(moved, { ...narrow, tolerance: 4 })).toBe(kept);
           expect(fix(kept, { ...narrow, tolerance: 4 })).toBe(kept);
         });
       });
